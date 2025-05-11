@@ -1,4 +1,4 @@
-# Any-Sync NixOS flake
+# Any-Sync NixOS flake ❄️
 
 Flake to natively self-host any-sync infrastructure 
 (for [Anytype](https://anytype.io)) on NixOS.

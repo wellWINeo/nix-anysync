@@ -29,6 +29,7 @@ in pkgs.buildGoModule {
   subPackages = [
     "any-sync-network"
     "any-sync-netcheck"
+    "anyconf"
   ];
 
   meta = {
