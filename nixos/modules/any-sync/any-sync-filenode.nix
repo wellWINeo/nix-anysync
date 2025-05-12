@@ -1,0 +1,51 @@
+{ config, lib, pkgs }:
+with lib;
+
+let
+  cfg = config.services.any-sync-filenode;
+  user = "any-sync";
+  group = "any-sync";
+
+  configFile = pkgs.writeText "any-sync-filenode-config.yml"
+    (builtins.toJSON cfg.config);
+{
+  options.services.any-sync-filenode = {
+    enable = lib.mkEnableOption "any-sync-filenode";
+
+    options.services.any-sync-filenode = {
+      enable = mkEnableOption "any-sync-filenode";
+
+      config = mkOption {
+        type = types.attrsOf types.inferred;
+        description = ''
+          Config for any-sync-filenode.
+          Reference https://github.com/anyproto/any-sync-filenode/blob/main/etc/any-sync-filenode.yml 
+        '';
+      };
+    };
+
+    config = mkIf cfg.enable {
+      users.users.${user} = {
+        isSystemUser = true;
+        group = group;
+        createHome = false;
+      };
+
+      users.groups.${group} = {};
+
+      systemd.service.any-sync-filenode = {
+        ExecStart = "${pkgs.any-sync-filenode}/bin/any-sync-filenode -c ${configFile}";
+        User = user;
+        Group = group;
+        Restart = "on-failure";
+        RestartSec = "5s";
+        StateDirectory = "any-sync";
+        WorkingDirectory = "/var/lib/any-sync";
+        PrivateTmp = true;
+        ProtectSystem = "full";
+        NoNewPrivileges = true;
+        LimitNOFILE = 65536;
+      };
+    };    
+  };
+}
