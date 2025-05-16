@@ -5,11 +5,17 @@
     nixpkgs.url = "github:nixos/nixpkgs/nixos-24.11";
   };
 
-  outputs = { self, nixpkgs }: 
+  outputs =
+    { nixpkgs, ... }:
     let
       # System types to support.
-      supportedSystems = [ "x86_64-linux" "x86_64-darwin" "aarch64-linux" "aarch64-darwin" ];
-      
+      supportedSystems = [
+        "x86_64-linux"
+        "x86_64-darwin"
+        "aarch64-linux"
+        "aarch64-darwin"
+      ];
+
       # Helper function to generate an attrset '{ x86_64-linux = f "x86_64-linux"; ... }'.
       forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
 
@@ -23,15 +29,21 @@
       };
 
       # Nixpkgs instantiated for supported system types.
-      nixpkgsFor = forAllSystems (system: 
-        import nixpkgs { 
-          inherit system; 
+      nixpkgsFor = forAllSystems (
+        system:
+        import nixpkgs {
+          inherit system;
           overlays = [ overlay ];
         }
       );
-    in {
-      packages = forAllSystems(system:
-        let pkgs = nixpkgsFor.${system}; in {
+    in
+    {
+      packages = forAllSystems (
+        system:
+        let
+          pkgs = nixpkgsFor.${system};
+        in
+        {
           any-sync-tools = pkgs.any-sync-tools;
           any-sync-coordinator = pkgs.any-sync-coordinator;
           any-sync-consensus = pkgs.any-sync-consensus;
@@ -39,5 +51,20 @@
           any-sync-filenode = pkgs.any-sync-filenode;
         }
       );
-  };
+
+      devShells = forAllSystems (
+        system:
+        let
+          pkgs = nixpkgsFor.${system};
+        in
+        {
+          default = pkgs.mkShell {
+            nativeBuildInputs = with pkgs; [
+              nixfmt-rfc-style
+              nixd
+            ];
+          };
+        }
+      );
+    };
 }

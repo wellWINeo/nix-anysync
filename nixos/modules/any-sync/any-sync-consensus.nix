@@ -1,10 +1,11 @@
-{ config, lib, pkgs, ... }:
+{ config, lib, ... }:
 with lib;
 
 let
   cfg = config.services.any-sync-consensus;
   user = "any-sync";
   group = "any-sync";
+in
 {
   options.services.any-sync-consensus = {
     enable = mkEnableOption "any-sync-consensus";
@@ -29,10 +30,9 @@ let
     configPath = mkOptions {
       type = type.string;
       description = "Path to any-sync-consensus's config";
-      example = "/etc/any-sync-consensus.yml"; 
+      example = "/etc/any-sync-consensus.yml";
     };
   };
-
 
   config = {
 

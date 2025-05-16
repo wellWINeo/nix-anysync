@@ -1,4 +1,8 @@
-{ config, lib, pkgs }:
+{
+  config,
+  lib,
+  pkgs,
+}:
 with lib;
 
 let
@@ -6,8 +10,8 @@ let
   user = "any-sync";
   group = "any-sync";
 
-  configFile = pkgs.writeText "any-sync-filenode-config.yml"
-    (builtins.toJSON cfg.config);
+  configFile = pkgs.writeText "any-sync-filenode-config.yml" (builtins.toJSON cfg.config);
+in
 {
   options.services.any-sync-filenode = {
     enable = lib.mkEnableOption "any-sync-filenode";
@@ -31,7 +35,7 @@ let
         createHome = false;
       };
 
-      users.groups.${group} = {};
+      users.groups.${group} = { };
 
       systemd.service.any-sync-filenode = {
         ExecStart = "${pkgs.any-sync-filenode}/bin/any-sync-filenode -c ${configFile}";
@@ -46,6 +50,6 @@ let
         NoNewPrivileges = true;
         LimitNOFILE = 65536;
       };
-    };    
+    };
   };
 }

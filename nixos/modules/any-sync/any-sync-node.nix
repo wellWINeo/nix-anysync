@@ -1,4 +1,8 @@
-{ config, lib, pkgs }:
+{
+  config,
+  lib,
+  pkgs,
+}:
 with lib;
 
 let
@@ -6,8 +10,8 @@ let
   user = "any-sync";
   group = "any-sync";
 
-  configFile = pkgs.writeText "any-sync-node-config.yml"
-    (builtins.toJSON cfg.config);
+  configFile = pkgs.writeText "any-sync-node-config.yml" (builtins.toJSON cfg.config);
+in
 {
   options.services.any-sync-node = {
     enable = lib.mkEnableOption "any-sync-node";
@@ -42,11 +46,12 @@ let
         createHome = false;
       };
 
-      users.groups.${group} = {};
+      users.groups.${group} = { };
 
-      systemd.services = listToAttrs (map (i:
-        nameValuePair "any-sync-node-${i}"
-          {
+      systemd.services = listToAttrs (
+        map (
+          i:
+          nameValuePair "any-sync-node-${i}" {
             ExecStart = "${pkgs.any-sync-node}/bin/any-sync-node -c ${configFile}";
             User = user;
             Group = group;
@@ -59,7 +64,8 @@ let
             NoNewPrivileges = true;
             LimitNOFILE = 65536;
           }
-        ) range 1 (cfg.replicasCount + 1));
-    };    
+        ) range 1 (cfg.replicasCount + 1)
+      );
+    };
   };
 }

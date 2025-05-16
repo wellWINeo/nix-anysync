@@ -1,4 +1,8 @@
-{ pkgs, fetchFromGitHub, lib }:
+{
+  pkgs,
+  fetchFromGitHub,
+  lib,
+}:
 
 ###
 # Package for any-sync-tools, includes
@@ -8,7 +12,8 @@
 let
   version = "0.2.8";
   maintainers = import ../../maintainers/maintainer-list.nix;
-in pkgs.buildGoModule {
+in
+pkgs.buildGoModule {
   pname = "any-sync-tools";
   inherit version;
 

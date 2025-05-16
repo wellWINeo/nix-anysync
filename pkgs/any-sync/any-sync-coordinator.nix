@@ -1,4 +1,8 @@
-{ pkgs, fetchFromGitHub, lib }:
+{
+  pkgs,
+  fetchFromGitHub,
+  lib,
+}:
 
 ###
 # Package for any-sync-coordinator node
@@ -8,7 +12,8 @@
 let
   version = "0.4.4";
   maintainers = import ../../maintainers/maintainer-list.nix;
-in pkgs.buildGoModule {
+in
+pkgs.buildGoModule {
   pname = "any-sync-coordinator";
   inherit version;
 
