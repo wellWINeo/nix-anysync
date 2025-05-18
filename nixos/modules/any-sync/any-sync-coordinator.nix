@@ -6,15 +6,16 @@
 with lib;
 
 let
+  userGroupOptions = import ./common/user-group.nix;
+  assertConfig = import ./common/assert-config.nix;
+  addUserAndGroup = import ./common/add-user-and-group.nix;
+  getConfigPath = import ./common/get-config-path.nix;
+  
   cfg = config.services.any-sync-coordinator;
   user = "any-sync";
   group = "any-sync";
 
-  configFile = pkgs.writeText "any-sync-coordinator-config.yml" (builtins.toJSON cfg.config);
-
-  userGroupOptions = import ./common/user-group.nix;
-  assertConfig = import ./common/assert-config.nix;
-  addUserAndGroup = import ./common/add-user-and-group.nix;
+  configPath = getConfigPath pkgs "any-sync-coordinator" cfg;
 in
 {
   options.services.any-sync-coordinator = {
@@ -48,7 +49,7 @@ in
       assertions = [ (assertConfig cfg) ];
 
       systemd.service.any-sync-coordinator = {
-        ExecStart = "${pkgs.any-sync-coordinator}/bin/any-sync-coordinator -c ${configFile}";
+        ExecStart = "${pkgs.any-sync-coordinator}/bin/any-sync-coordinator -c ${configPath}";
         User = user;
         Group = group;
         Restart = "on-failure";

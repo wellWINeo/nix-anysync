@@ -6,15 +6,16 @@
 with lib;
 
 let
+  userGroupOptions = import ./common/user-group.nix;
+  assertConfig = import ./common/assert-config.nix;
+  addUserAndGroup = import ./common/add-user-and-group.nix;
+  getConfigPath = import ./common/get-config-path.nix;
+
   cfg = config.services.any-sync-filenode;
   user = "any-sync";
   group = "any-sync";
 
-  configFile = pkgs.writeText "any-sync-filenode-config.yml" (builtins.toJSON cfg.config);
-  
-  userGroupOptions = import ./common/user-group.nix;
-  assertConfig = import ./common/assert-config.nix;
-  addUserAndGroup = import ./common/add-user-and-group.nix;
+  configPath = getConfigPath pkgs "any-sync-filenode" cfg;
 in
 {
   options.services.any-sync-filenode = {
@@ -45,7 +46,7 @@ in
       assertions = [ (assertConfig cfg) ];
 
       systemd.service.any-sync-filenode = {
-        ExecStart = "${pkgs.any-sync-filenode}/bin/any-sync-filenode -c ${configFile}";
+        ExecStart = "${pkgs.any-sync-filenode}/bin/any-sync-filenode -c ${configPath}";
         User = user;
         Group = group;
         Restart = "on-failure";

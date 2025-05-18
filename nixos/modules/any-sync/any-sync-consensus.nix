@@ -1,13 +1,22 @@
-{ config, lib, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 with lib;
 
 let
-  cfg = config.services.any-sync-consensus;
-  user = "any-sync";
-  group = "any-sync";
   userGroupOptions = import ./common/user-group.nix;
   assertConfig = import ./common/assert-config.nix;
   addUserAndGroup = import ./common/add-user-and-group.nix;
+  getConfigPath = import ./common/get-config-path.nix;
+
+  cfg = config.services.any-sync-consensus;
+  user = "any-sync";
+  group = "any-sync";
+
+  configPath = getConfigPath pkgs "any-sync-consensus" cfg;
 in
 {
   options.services.any-sync-consensus = {
@@ -39,7 +48,7 @@ in
       assertions = [ (assertConfig cfg) ];
 
       systemd.service.any-sync-coordinator = {
-        ExecStart = "${pkgs.any-sync-coordinator}/bin/any-sync-consensus -c ${configFile}";
+        ExecStart = "${pkgs.any-sync-coordinator}/bin/any-sync-consensus -c ${configPath}";
         User = user;
         Group = group;
         Restart = "on-failure";

@@ -11,7 +11,7 @@ let
   group = "any-sync";
 
   configPaths = imap1 (
-    i: replica: pkgs.writeText "any-sync-node-${i}-config.yml" (builtins.toJSON replica.config)
+    i: replica: pkgs.writeText "any-sync-node-${i}.yml" (builtins.toJSON replica.config)
   ) cfg.replicas;
 
   getConfigPath =
@@ -19,7 +19,7 @@ let
     let
       replicaOpts = elemAt cfg.replicas i;
     in
-    if replicaOpts.config then elemAt configPaths i else replicaOpts.configPath;
+    if replicaOpts.configPath != null then replicaOpts.configPath else elemAt configPaths i;
 
   userGroupOptions = import ./common/user-group.nix;
   assertConfig = import ./common/assert-config.nix;
