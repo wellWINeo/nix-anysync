@@ -1,0 +1,14 @@
+name: Check update for any-sync-node
+
+on:
+  schedule:
+    - cron: "0 0 * * *" # Daily
+  workflow_dispatch:
+
+jobs:
+  check-update-node:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/check-pkg-update.yml
+        with:
+          nix_path: "pkgs/any-sync/any-sync-node.nix"

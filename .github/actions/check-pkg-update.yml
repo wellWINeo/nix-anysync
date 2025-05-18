@@ -1,0 +1,44 @@
+name: 'Check for Package Updates'
+description: 'Checks if a newer version available'
+inputs:
+  nix_path:
+    description: 'Path to the Nix package file'
+    required: true
+runs:
+  using: 'composite'
+  steps:
+    - name: Extract package info
+      shell: bash
+      run: |
+        VERSION=$(grep -oP 'version = "\K[^"]+' "${{ inputs.nix_path }}")
+        OWNER=$(grep -oP 'owner = "\K[^"]+' "${{ inputs.nix_path }}")
+        REPO=$(grep -oP 'repo = "\K[^"]+' "${{ inputs.nix_path }}")
+        echo "Current version: $VERSION"
+        echo "owner=$OWNER" >> $GITHUB_OUTPUT
+        echo "repo=$REPO" >> $GITHUB_OUTPUT
+        echo "current_version=$VERSION" >> $GITHUB_OUTPUT
+      id: extract
+
+    - name: Check latest release
+      shell: bash
+      run: |
+        LATEST=$(curl -s "https://api.github.com/repos/${{ steps.extract.outputs.owner }}/${{ steps.extract.outputs.repo }}/releases/latest" | \
+          jq -r '.tag_name | sub("^v"; "")')
+        echo "Latest release: $LATEST"
+        echo "latest_version=$LATEST" >> $GITHUB_OUTPUT
+      id: check-release
+
+    - name: Create issue if update available
+      if: ${{ steps.extract.outputs.current_version != steps.check-release.outputs.latest_version }}
+      uses: actions/github-script@v6
+      with:
+        script: |
+          await github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title: `Update ${{ steps.extract.outputs.repo }} to ${{ steps.check-release.outputs.latest_version }}`,
+            body: `**Package path**: \`${{ inputs.nix_path }}\`
+            \n**Current version**: ${{ steps.extract.outputs.current_version }}
+            \n**Available version**: ${{ steps.check-release.outputs.latest_version }}`,
+            labels: ['dependency-update']
+          })
