@@ -9,6 +9,8 @@ jobs:
   check-update-consensus:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4.2.2
+
       - uses: ./.github/actions/check-pkg-update
         with:
           nix_path: "pkgs/any-sync/any-sync-consensus.nix"
