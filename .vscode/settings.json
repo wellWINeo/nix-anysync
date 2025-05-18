@@ -8,8 +8,5 @@
       }
     }
   },
-  "nix.formatterPath": "nixfmt",
-  "yaml.schemas": {
-    "https://json.schemastore.org/github-action.json": ".github/actions/check-pkg-update.yml"
-  }
+  "nix.formatterPath": "nixfmt"
 }
