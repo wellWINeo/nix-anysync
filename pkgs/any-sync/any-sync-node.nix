@@ -20,15 +20,10 @@ pkgs.buildGoModule {
   src = fetchFromGitHub {
     owner = "anyproto";
     repo = "any-sync-node";
-    rev = "v${version}";
+    tag = "v${version}";
     sha256 = "sha256-dWvrpHHh3+zRzbIkKQr+1VtxIenZfdly2m0SpaW5nFY=";
   };
 
-  # git clone https://github.com/anyproto/any-sync-node
-  # git checkout v0.6.4
-  # go mod tidy
-  # go mod vendor
-  # nix hash path ./vendor
   vendorHash = "sha256-bmOXsCIofybZKPCUgSZSom9TI2vmVatjNaX7jrDyddQ=";
 
   postInstall = ''

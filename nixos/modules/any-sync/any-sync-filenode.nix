@@ -11,31 +11,38 @@ let
   group = "any-sync";
 
   configFile = pkgs.writeText "any-sync-filenode-config.yml" (builtins.toJSON cfg.config);
+  
+  userGroupOptions = import ./common/user-group.nix;
+  assertConfig = import ./common/assert-config.nix;
+  addUserAndGroup = import ./common/add-user-and-group.nix;
 in
 {
   options.services.any-sync-filenode = {
     enable = lib.mkEnableOption "any-sync-filenode";
 
-    options.services.any-sync-filenode = {
-      enable = mkEnableOption "any-sync-filenode";
-
-      config = mkOption {
-        type = types.attrsOf types.inferred;
-        description = ''
-          Config for any-sync-filenode.
-          Reference https://github.com/anyproto/any-sync-filenode/blob/main/etc/any-sync-filenode.yml 
-        '';
-      };
+    config = mkOption {
+      type = types.attrs;
+      default = null;
+      description = ''
+        any-sync-filenode configuration
+        Reference https://github.com/anyproto/any-sync-filenode/blob/main/etc/any-sync-filenode.yml 
+      '';
     };
 
-    config = mkIf cfg.enable {
-      users.users.${user} = {
-        isSystemUser = true;
-        group = group;
-        createHome = false;
-      };
+    configPath = mkOption {
+      type = types.path;
+      default = null;
+      description = ''
+        any-sync-filenode configuration's path
+        Reference https://github.com/anyproto/any-sync-filenode/blob/main/etc/any-sync-filenode.yml 
+      '';
+    };
+  } // userGroupOptions lib user group;
 
-      users.groups.${group} = { };
+  config =
+    mkIf cfg.enable {
+
+      assertions = [ (assertConfig cfg) ];
 
       systemd.service.any-sync-filenode = {
         ExecStart = "${pkgs.any-sync-filenode}/bin/any-sync-filenode -c ${configFile}";
@@ -50,6 +57,6 @@ in
         NoNewPrivileges = true;
         LimitNOFILE = 65536;
       };
-    };
-  };
+    }
+    // addUserAndGroup lib user group;
 }

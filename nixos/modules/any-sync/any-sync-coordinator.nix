@@ -11,6 +11,10 @@ let
   group = "any-sync";
 
   configFile = pkgs.writeText "any-sync-coordinator-config.yml" (builtins.toJSON cfg.config);
+
+  userGroupOptions = import ./common/user-group.nix;
+  assertConfig = import ./common/assert-config.nix;
+  addUserAndGroup = import ./common/add-user-and-group.nix;
 in
 {
   options.services.any-sync-coordinator = {
@@ -20,22 +24,28 @@ in
       enable = mkEnableOption "any-sync-coordinator";
 
       config = mkOption {
-        type = types.attrsOf types.inferred;
+        type = types.attrsOf;
+        default = null;
         description = ''
           Config for any-sync-coordinator.
           Reference https://github.com/anyproto/any-sync-coordinator/blob/main/etc/any-sync-coordinator.yml 
         '';
       };
-    };
 
-    config = mkIf cfg.enable {
-      users.users.${user} = {
-        isSystemUser = true;
-        group = group;
-        createHome = false;
+      configPath = mkOption {
+        type = types.path;
+        default = null;
+        description = ''
+          Config for any-sync-coordinator's config path.
+          Reference: https://github.com/anyproto/any-sync-coordinator/blob/main/etc/any-sync-coordinator.yml 
+        '';
       };
+    };
+  } // userGroupOptions lib user group;
 
-      users.groups.${group} = { };
+  config =
+    mkIf cfg.enable {
+      assertions = [ (assertConfig cfg) ];
 
       systemd.service.any-sync-coordinator = {
         ExecStart = "${pkgs.any-sync-coordinator}/bin/any-sync-coordinator -c ${configFile}";
@@ -50,6 +60,6 @@ in
         NoNewPrivileges = true;
         LimitNOFILE = 65536;
       };
-    };
-  };
+    }
+    // addUserAndGroup lib user group;
 }

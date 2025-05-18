@@ -20,15 +20,10 @@ pkgs.buildGoModule {
   src = fetchFromGitHub {
     owner = "anyproto";
     repo = "any-sync-coordinator";
-    rev = "v${version}";
+    tag = "v${version}";
     sha256 = "sha256-JRiIM4UP92R+PI00XI6+yTIKaK1Q1pgkSp+6k9QWa+E=";
   };
 
-  # git clone https://github.com/anyproto/any-sync-coordinator
-  # git checkout v0.4.4
-  # go mod tidy
-  # go mod vendor
-  # nix hash path ./vendor
   vendorHash = "sha256-6qzqeYaaU2IwTLabPMebRjnsXitKlcCAZoIWCs4mOds=";
 
   subPackages = [

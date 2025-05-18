@@ -10,49 +10,71 @@ let
   user = "any-sync";
   group = "any-sync";
 
-  configFile = pkgs.writeText "any-sync-node-config.yml" (builtins.toJSON cfg.config);
+  configPaths = imap1 (
+    i: replica: pkgs.writeText "any-sync-node-${i}-config.yml" (builtins.toJSON replica.config)
+  ) cfg.replicas;
+
+  getConfigPath =
+    i:
+    let
+      replicaOpts = elemAt cfg.replicas i;
+    in
+    if replicaOpts.config then elemAt configPaths i else replicaOpts.configPath;
+
+  userGroupOptions = import ./common/user-group.nix;
+  assertConfig = import ./common/assert-config.nix;
+  addUserAndGroup = import ./common/add-user-and-group.nix;
 in
 {
   options.services.any-sync-node = {
-    enable = lib.mkEnableOption "any-sync-node";
+    enable = mkEnableOption "any-sync-node";
 
-    options.services.any-sync-node = {
-      enable = mkEnableOption "any-sync-node";
+    replicas = mkOption {
+      type = types.listOf types.submodule {
+        options = {
+          config = mkOption {
+            type = types.attrs;
+            default = null;
+            description = ''
+              any-sync-node configuration
+              Reference: https://github.com/anyproto/any-sync-node/blob/main/etc/any-sync-node.yml
+            '';
+          };
 
-      replicasCount = mkOptions {
-        type = types.integer;
-        description = ''
-          Replicas count to sync nodes. Due to lack of replications
-          functionality in systemd will create several services for
-          each replica. 
-        '';
-        default = 1;
-        example = 3;
+          configPath = mkOption {
+            type = types.path;
+            default = null;
+            description = ''
+              any-sync-node configuration path
+              Reference: https://github.com/anyproto/any-sync-node/blob/main/etc/any-sync-node.yml
+            '';
+          };
+        };
       };
-
-      config = mkOption {
-        type = types.attrsOf types.inferred;
-        description = ''
-          Config for any-sync-node.
-          Reference https://github.com/anyproto/any-sync-node/blob/main/etc/any-sync-filenode.yml 
-        '';
-      };
+      description = ''
+        Options for each any-sync-node replica.
+        Will create systemd unit service for each replica
+        according to provided options count.
+      '';
     };
+  } // userGroupOptions lib user group;
 
-    config = mkIf cfg.enable {
-      users.users.${user} = {
-        isSystemUser = true;
-        group = group;
-        createHome = false;
-      };
+  config =
+    mkIf cfg.enable {
+      assertions = [
+        {
+          # Ensures that all replicas has config or config path
+          assertion = lists.all assertConfig cfg.replicas;
+          message = "One of any-sync-node replica hasn't config or configPath";
+        }
+      ];
 
-      users.groups.${group} = { };
-
+      # create systemd service unit for each replica
       systemd.services = listToAttrs (
         map (
           i:
           nameValuePair "any-sync-node-${i}" {
-            ExecStart = "${pkgs.any-sync-node}/bin/any-sync-node -c ${configFile}";
+            ExecStart = "${pkgs.any-sync-node}/bin/any-sync-node -c ${getConfigPath i}";
             User = user;
             Group = group;
             Restart = "on-failure";
@@ -64,8 +86,8 @@ in
             NoNewPrivileges = true;
             LimitNOFILE = 65536;
           }
-        ) range 1 (cfg.replicasCount + 1)
+        ) range 1 (length cfg.replicas)
       );
-    };
-  };
+    }
+    // addUserAndGroup lib user group;
 }
