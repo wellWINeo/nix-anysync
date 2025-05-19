@@ -8,6 +8,7 @@ runs:
   using: 'composite'
   steps:
     - name: Extract package info
+      id: extract
       shell: bash
       run: |
         VERSION=$(grep -oP 'version = "\K[^"]+' "${{ inputs.nix_path }}")
@@ -17,28 +18,59 @@ runs:
         echo "owner=$OWNER" >> $GITHUB_OUTPUT
         echo "repo=$REPO" >> $GITHUB_OUTPUT
         echo "current_version=$VERSION" >> $GITHUB_OUTPUT
-      id: extract
 
     - name: Check latest release
+      id: check-release
       shell: bash
       run: |
         LATEST=$(curl -s "https://api.github.com/repos/${{ steps.extract.outputs.owner }}/${{ steps.extract.outputs.repo }}/releases/latest" | \
           jq -r '.tag_name | sub("^v"; "")')
         echo "Latest release: $LATEST"
         echo "latest_version=$LATEST" >> $GITHUB_OUTPUT
-      id: check-release
+        echo "issue_title=Update ${{ steps.extract.outputs.repo }} to $LATEST" >> $GITHUB_OUTPUT
 
-    - name: Create issue if update available
+    - name: Check for existing issue
+      id: check-existing
       if: ${{ steps.extract.outputs.current_version != steps.check-release.outputs.latest_version }}
       uses: actions/github-script@v6
+      env:
+        ISSUE_TITLE: ${{ steps.extract.outputs.issue_title }}
+      with:
+        script: |
+          const { data: issues } = await github.rest.issues.listForRepo({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            labels: [ 'dependency-update' ],
+            state: 'open' 
+          })
+
+          const existingIssue = issues.find(issue => 
+            issue.title === process.env['ISSUE_TITLE']
+          )
+
+          if (existingIssue) {
+            console.log(`Found existing issue: ${existingIssue.html_url}`) 
+          }
+
+          core.setOutput('exists', !!existingIssue)
+
+
+    - name: Create issue if update available
+      if: ${{ steps.extract.outputs.current_version != steps.check-release.outputs.latest_version
+          && steps.check-existing.outputs.exists == 'false' }}
+      uses: actions/github-script@v6
+      env:
+        ISSUE_TITLE: ${{ steps.check-release.outputs.issue_title }}
+        CURRENT_VERSION: ${{ steps.extract.outputs.current_version }}
+        LATEST_VERSION: ${{ steps.check-release.outputs.latest_version }}
       with:
         script: |
           await github.rest.issues.create({
             owner: context.repo.owner,
             repo: context.repo.repo,
-            title: `Update ${{ steps.extract.outputs.repo }} to ${{ steps.check-release.outputs.latest_version }}`,
-            body: `**Package path**: \`${{ inputs.nix_path }}\`
-            \n**Current version**: ${{ steps.extract.outputs.current_version }}
-            \n**Available version**: ${{ steps.check-release.outputs.latest_version }}`,
+            title: process.env['ISSUE_TITLE'],
+            body: `**Package path**: \`${ core.getInput("nix_path") }\`
+            \n**Current version**: ${ process.env['CURRENT_VERSION'] }
+            \n**Available version**: ${ process.env['LATEST_VERSION'] }`,
             labels: ['dependency-update']
           })
