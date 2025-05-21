@@ -6,7 +6,7 @@ Flake to natively self-host any-sync infrastructure
 ## Goals 📝
 
 - [X] anysync packages
-- [ ] configuration modules
-- [ ] add tests
+- [ ] configuration modules (added, but not tested yet)
+- [ ] add tests (added, but not tested yet)
 - [ ] add "HOWTO"
 - [ ] merge into NixOS/nixpkgs

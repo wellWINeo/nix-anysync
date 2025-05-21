@@ -2,30 +2,30 @@
   config,
   lib,
   pkgs,
+  ...
 }:
 with lib;
 
 let
-  userGroupOptions = import ./common/user-group.nix;
-  assertConfig = import ./common/assert-config.nix;
-  addUserAndGroup = import ./common/add-user-and-group.nix;
-  getConfigPath = import ./common/get-config-path.nix;
-  
+  common = import ./common.nix {
+    inherit pkgs;
+    inherit lib;
+  };
+
   cfg = config.services.any-sync-coordinator;
   user = "any-sync";
   group = "any-sync";
 
-  configPath = getConfigPath pkgs "any-sync-coordinator" cfg;
+  configPath = common.getConfigPath cfg "any-sync-coordinator";
 in
 {
-  options.services.any-sync-coordinator = {
-    enable = lib.mkEnableOption "any-sync-coordinator";
-
-    options.services.any-sync-coordinator = {
+  options.services.any-sync-coordinator =
+    with types;
+    {
       enable = mkEnableOption "any-sync-coordinator";
 
       config = mkOption {
-        type = types.attrsOf;
+        type = nullOr attrs;
         default = null;
         description = ''
           Config for any-sync-coordinator.
@@ -34,33 +34,35 @@ in
       };
 
       configPath = mkOption {
-        type = types.path;
+        type = nullOr path;
         default = null;
         description = ''
           Config for any-sync-coordinator's config path.
           Reference: https://github.com/anyproto/any-sync-coordinator/blob/main/etc/any-sync-coordinator.yml 
         '';
       };
-    };
-  } // userGroupOptions lib user group;
+    }
+    // (common.userGroupOptions user group);
 
   config =
     mkIf cfg.enable {
-      assertions = [ (assertConfig cfg) ];
+      assertions = [ (common.assertConfig cfg) ];
 
-      systemd.service.any-sync-coordinator = {
-        ExecStart = "${pkgs.any-sync-coordinator}/bin/any-sync-coordinator -c ${configPath}";
-        User = user;
-        Group = group;
-        Restart = "on-failure";
-        RestartSec = "5s";
-        StateDirectory = "any-sync";
-        WorkingDirectory = "/var/lib/any-sync";
-        PrivateTmp = true;
-        ProtectSystem = "full";
-        NoNewPrivileges = true;
-        LimitNOFILE = 65536;
+      systemd.services.any-sync-coordinator = {
+        serviceConfig = {
+          ExecStart = "${pkgs.any-sync-coordinator}/bin/any-sync-coordinator -c ${configPath}";
+          User = user;
+          Group = group;
+          Restart = "on-failure";
+          RestartSec = "5s";
+          StateDirectory = "any-sync";
+          WorkingDirectory = "/var/lib/any-sync";
+          PrivateTmp = true;
+          ProtectSystem = "full";
+          NoNewPrivileges = true;
+          LimitNOFILE = 65536;
+        };
       };
     }
-    // addUserAndGroup lib user group;
+    // (common.addUserAndGroup cfg user group);
 }

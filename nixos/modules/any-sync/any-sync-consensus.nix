@@ -7,59 +7,64 @@
 with lib;
 
 let
-  userGroupOptions = import ./common/user-group.nix;
-  assertConfig = import ./common/assert-config.nix;
-  addUserAndGroup = import ./common/add-user-and-group.nix;
-  getConfigPath = import ./common/get-config-path.nix;
+  common = import ./common.nix {
+    inherit pkgs;
+    inherit lib;
+  };
 
   cfg = config.services.any-sync-consensus;
   user = "any-sync";
   group = "any-sync";
 
-  configPath = getConfigPath pkgs "any-sync-consensus" cfg;
+  configPath = common.getConfigPath cfg "any-sync-consensus";
 in
 {
-  options.services.any-sync-consensus = {
-    enable = mkEnableOption "any-sync-consensus";
+  options.services.any-sync-consensus =
+    with types;
+    {
+      enable = mkEnableOption "any-sync-consensus";
 
-    config = mkOption {
-      type = types.attrs;
-      default = null;
-      description = ''
-        any-sync-consensus configuration
-        Reference: https://github.com/anyproto/any-sync-consensusnode/blob/main/etc/any-sync-consensusnode.yml
-      '';
-    };
+      config = mkOption {
+        type = nullOr attrs;
+        default = null;
+        description = ''
+          any-sync-consensus configuration
+          Reference: https://github.com/anyproto/any-sync-consensusnode/blob/main/etc/any-sync-consensusnode.yml
+        '';
+      };
 
-    configPath = mkOption {
-      type = types.path;
-      default = null;
-      description = ''
-        any-sync-consensus configuration's path
-        Reference: https://github.com/anyproto/any-sync-consensusnode/blob/main/etc/any-sync-consensusnode.yml
-      '';
-      example = "/etc/any-sync-consensus.yml";
-    };
-  } // userGroupOptions lib user group;
+      configPath = mkOption {
+        type = nullOr path;
+        default = null;
+        description = ''
+          any-sync-consensus configuration's path
+          Reference: https://github.com/anyproto/any-sync-consensusnode/blob/main/etc/any-sync-consensusnode.yml
+        '';
+        example = "/etc/any-sync-consensus.yml";
+      };
+    }
+    // (common.userGroupOptions user group);
 
   config =
     mkIf cfg.enable {
 
-      assertions = [ (assertConfig cfg) ];
+      assertions = [ (common.assertConfig cfg) ];
 
-      systemd.service.any-sync-coordinator = {
-        ExecStart = "${pkgs.any-sync-coordinator}/bin/any-sync-consensus -c ${configPath}";
-        User = user;
-        Group = group;
-        Restart = "on-failure";
-        RestartSec = "5s";
-        StateDirectory = "any-sync";
-        WorkingDirectory = "/var/lib/any-sync";
-        PrivateTmp = true;
-        ProtectSystem = "full";
-        NoNewPrivileges = true;
-        LimitNOFILE = 65536;
+      systemd.services.any-sync-consensus = {
+        serviceConfig = {
+          ExecStart = "${pkgs.any-sync-consensus}/bin/any-sync-consensus -c ${configPath}";
+          User = user;
+          Group = group;
+          Restart = "on-failure";
+          RestartSec = "5s";
+          StateDirectory = "any-sync";
+          WorkingDirectory = "/var/lib/any-sync";
+          PrivateTmp = true;
+          ProtectSystem = "full";
+          NoNewPrivileges = true;
+          LimitNOFILE = 65536;
+        };
       };
     }
-    // addUserAndGroup lib user group;
+    // (common.addUserAndGroup cfg user group);
 }

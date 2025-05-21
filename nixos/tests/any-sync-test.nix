@@ -1,6 +1,8 @@
-{ pkgs, ... }:
+{ pkgs, modules, ... }:
 
 let
+  maintainers = import ../../maintainers/maintainer-list.nix;
+
   networkConfig = {
     id = "6820862ae79bd90018ae22d0";
     networkId = "N4rNdGGdRB2Erg8xfh3ZmbkZyDF6kV2aRSsKUahiHRv1BPPT";
@@ -77,7 +79,7 @@ let
     port:
     let
       listenOptions = listenPort: {
-        listenAddrs = [ "0.0.0.0:${listenPort}" ];
+        listenAddrs = [ "0.0.0.0:${toString listenPort}" ];
         writeTimeoutSec = 10;
         dialTimeoutSec = 10;
       };
@@ -100,15 +102,24 @@ let
 
   clientConfigPath = pkgs.writeText "client.yml" (builtins.toJSON networkConfig);
 in
-{
+pkgs.nixosTest {
+
   name = "any-sync-test";
 
-  meta = with pkgs.stdenv.lib.maintainers; {
-    maintainers = [ wellWINeo ];
+  meta = {
+    maintainers = [ maintainers.wellWINeo ];
   };
 
   nodes = {
     server = {
+
+      imports = [
+        modules.any-sync-consensus
+        modules.any-sync-coordinator
+        modules.any-sync-filenode
+        modules.any-sync-node
+      ];
+
       networking = {
         useDHCP = false;
         interfaces.eth1.ipv4.addresses = [
@@ -117,6 +128,19 @@ in
             prefixLength = 24;
           }
         ];
+      };
+
+      services.mongodb.enable = true;
+
+      # Needs to load RedisBloom module for production use
+      # loadModule = [ "/path/to/redisbloom.so" ];
+      services.redis.servers.anysync-files.enable = true;
+
+      services.minio = {
+        enable = true;
+        browser = false;
+        accessKey = "minioAccess";
+        secretKey = "minioSecret";
       };
 
       services.any-sync-consensus = {
@@ -130,7 +154,7 @@ in
               signingKey = "sg2O8EAvfsPI36RT4uqevZLD1XLG7b3k6O6g7mQMc9Ig8N4vZuiM/8xkhk852dZebLGx7VqEwgCrl4aMCi/whw==";
             };
             mongo = {
-              connect = "mongodb://mongo:27001/?w=majority";
+              connect = "mongodb://127.0.0.1:27001/?w=majority";
               database = "consensus";
               logCollection = "log";
             };
@@ -149,7 +173,7 @@ in
               signingKey = "sg2O8EAvfsPI36RT4uqevZLD1XLG7b3k6O6g7mQMc9Ig8N4vZuiM/8xkhk852dZebLGx7VqEwgCrl4aMCi/whw==";
             };
             mongo = {
-              connect = "mongodb://mongo:27001";
+              connect = "mongodb://127.0.0.1:27001";
               database = "coordinator";
               log = "log";
               spaces = "spaces";
@@ -184,13 +208,17 @@ in
               maxThreads = 16;
               profile = "default";
               region = "us-east-1";
-              endpoint = "http://minio:9000";
+              endpoint = "http://127.0.0.1:9000";
               forcePathStyle = true; # 'true' for self-hosted S3 Object Storage
+              credentials = {
+                accessKey = "minioAccess";
+                secretKey = "minioSecret";
+              };
             };
 
             redis = {
               isCluster = false;
-              url = "redis://redis:6379?dial_timeout=3&read_timeout=6s";
+              url = "redis://127.0.0.1:6379?dial_timeout=3&read_timeout=6s";
             };
           }
           // getCommonOptions 1005;
@@ -200,31 +228,31 @@ in
         enable = true;
         replicas =
           map
-            (
-              opts:
-              networkConfig
-              // {
-                account = {
-                  peerId = opts.peerId;
-                  peerKey = opts.peerKey;
-                  signingKey = opts.signingKey;
-                };
-                apiServer.listenAddr = "0.0.0.0:8080";
-                space = {
-                  gcTTL = 60;
-                  syncPeriod = 600;
-                };
-                storage = {
-                  path = "/storage";
-                  anyStorePath = "/anyStorage";
-                };
-                nodeSync = {
-                  periodicSyncHours = 2;
-                  syncOnStart = true;
-                };
-              }
-              // getCommonOptions opts.port
-            )
+            (opts: {
+              config =
+                networkConfig
+                // {
+                  account = {
+                    peerId = opts.peerId;
+                    peerKey = opts.peerKey;
+                    signingKey = opts.signingKey;
+                  };
+                  apiServer.listenAddr = "0.0.0.0:8080";
+                  space = {
+                    gcTTL = 60;
+                    syncPeriod = 600;
+                  };
+                  storage = {
+                    path = "/storage";
+                    anyStorePath = "/anyStorage";
+                  };
+                  nodeSync = {
+                    periodicSyncHours = 2;
+                    syncOnStart = true;
+                  };
+                }
+                // getCommonOptions opts.port;
+            })
             [
               {
                 peerId = "12D3KooWQFamdVnYhGqda7un21XtQcZu8fPnmU5ARgDvuJiRGgNq";

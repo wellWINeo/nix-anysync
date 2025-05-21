@@ -34,6 +34,10 @@
         import nixpkgs {
           inherit system;
           overlays = [ overlay ];
+          config = {
+            allowUnfree = true;
+            allowUnfreePredicate = _: true;
+          };
         }
       );
     in
@@ -51,6 +55,31 @@
           any-sync-filenode = pkgs.any-sync-filenode;
         }
       );
+
+      checks = forAllSystems (
+        system:
+        let
+          pkgs = nixpkgsFor.${system};
+        in
+        {
+          any-sync-test = pkgs.callPackage ./nixos/tests/any-sync-test.nix {
+            inherit pkgs;
+            modules = {
+              any-sync-consensus = ./nixos/modules/any-sync/any-sync-consensus.nix;
+              any-sync-coordinator = ./nixos/modules/any-sync/any-sync-coordinator.nix;
+              any-sync-filenode = ./nixos/modules/any-sync/any-sync-filenode.nix;
+              any-sync-node = ./nixos/modules/any-sync/any-sync-node.nix;
+            };
+          };
+        }
+      );
+
+      nixosModules = {
+        any-sync-consensus = ./nixos/modules/any-sync/any-sync-consensus.nix;
+        any-sync-coordinator = ./nixos/modules/any-sync/any-sync-coordinator.nix;
+        any-sync-filenode = ./nixos/modules/any-sync/any-sync-filenode.nix;
+        any-sync-node = ./nixos/modules/any-sync/any-sync-node.nix;
+      };
 
       devShells = forAllSystems (
         system:
