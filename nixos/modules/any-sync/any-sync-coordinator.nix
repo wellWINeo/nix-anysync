@@ -48,19 +48,39 @@ in
     mkIf cfg.enable {
       assertions = [ (common.assertConfig cfg) ];
 
+      users.users.${user} = {
+        isSystemUser = true;
+        group = group;
+        createHome = false;
+      };
+
+      users.groups.${group} = { };
+
       systemd.services.any-sync-coordinator = {
+        after = [ "network.target" ];
+        wants = [ "mongodb.service" ];
+        wantedBy = [ "multi-user.target" ];
+
+        path = [ pkgs.any-sync-coordinator ];
+
+        unitConfig = {
+          StartLimitBurst = 3;
+        };
+
         serviceConfig = {
           ExecStart = "${pkgs.any-sync-coordinator}/bin/any-sync-coordinator -c ${configPath}";
           User = user;
           Group = group;
-          Restart = "on-failure";
-          RestartSec = "5s";
-          StateDirectory = "any-sync";
-          WorkingDirectory = "/var/lib/any-sync";
-          PrivateTmp = true;
-          ProtectSystem = "full";
-          NoNewPrivileges = true;
-          LimitNOFILE = 65536;
+          Restart = "no";
+          # ReadWritePaths = [ "/var/lib/network-store/any-sync-coordinator" ];
+          # Restart = "on-failure";
+          # RestartSec = "5s";
+          # StateDirectory = "any-sync";
+          # WorkingDirectory = "/var/lib/any-sync";
+          # PrivateTmp = true;
+          # ProtectSystem = "full";
+          # NoNewPrivileges = true;
+          # LimitNOFILE = 65536;
         };
       };
     }

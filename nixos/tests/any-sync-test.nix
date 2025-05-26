@@ -1,4 +1,9 @@
-{ pkgs, modules, ... }:
+{
+  self,
+  pkgs,
+  lib,
+  ...
+}:
 
 let
   maintainers = import ../../maintainers/maintainer-list.nix;
@@ -10,10 +15,10 @@ let
       {
         # any-sync-node 1
         addresses = [
-          "192.168.0.1:1001"
-          "quic://192.168.0.1:1011"
-          "127.0.0.1:1001"
-          "quic://127.0.0.1:1011"
+          "192.168.0.1:1101"
+          "quic://192.168.0.1:1111"
+          "127.0.0.1:1101"
+          "quic://127.0.0.1:1111"
         ];
         peerId = "12D3KooWQFamdVnYhGqda7un21XtQcZu8fPnmU5ARgDvuJiRGgNq";
         types = [ "tree" ];
@@ -21,10 +26,10 @@ let
       {
         # any-sync-node 2
         addresses = [
-          "192.168.0.1:1002"
-          "quic://192.168.0.1:1012"
-          "127.0.0.1:1002"
-          "quic://127.0.0.1:1012"
+          "192.168.0.1:1102"
+          "quic://192.168.0.1:1112"
+          "127.0.0.1:1102"
+          "quic://127.0.0.1:1112"
         ];
         peerId = "12D3KooWDRVzZ1zeoHb6gS8Pez33mYUNxdmzVfE6R6mUruXSCB6s";
         types = [ "tree" ];
@@ -32,10 +37,10 @@ let
       {
         # any-sync-node 3
         addresses = [
-          "192.168.0.1:1003"
-          "quic://192.168.0.1:1013"
-          "127.0.0.1:1003"
-          "quic://127.0.0.1:1013"
+          "192.168.0.1:1103"
+          "quic://192.168.0.1:1113"
+          "127.0.0.1:1103"
+          "quic://127.0.0.1:1113"
         ];
         peerId = "12D3KooWKhZoPy68FJAcmnm6YjetxvAfndgfcrqgcyq7NCnEJ3Zn";
         types = [ "tree" ];
@@ -43,10 +48,10 @@ let
       {
         # any-sync-coordinator
         addresses = [
-          "192.168.0.1:1004"
-          "quic://192.168.0.1:1014"
-          "127.0.0.1:1004"
-          "quic://127.0.0.1:1014"
+          "192.168.0.1:1104"
+          "quic://192.168.0.1:1114"
+          "127.0.0.1:1104"
+          "quic://127.0.0.1:1114"
         ];
         peerId = "12D3KooWQ8nLTT4VTWNwZPJ7p9KCiFMLWriVzivKjMt87g5WwvEP";
         types = [ "coordinator" ];
@@ -54,10 +59,10 @@ let
       {
         # any-sync-filenode
         addresses = [
-          "192.168.0.1:1005"
-          "quic://192.168.0.1:1015"
-          "127.0.0.1:1005"
-          "quic://127.0.0.1:1015"
+          "192.168.0.1:1105"
+          "quic://192.168.0.1:1115"
+          "127.0.0.1:1105"
+          "quic://127.0.0.1:1115"
         ];
         peerId = "12D3KooWNLZmGeHbWVJsVMmBCwdrsyEdTBj6HydakagT7sRgDBtH";
         types = [ "file" ];
@@ -65,10 +70,10 @@ let
       {
         # any-sync-consensusnode
         addresses = [
-          "192.168.0.1:1006"
-          "quic://192.168.0.1:1016"
-          "127.0.0.1:1006"
-          "quic://127.0.0.1:1016"
+          "192.168.0.1:1106"
+          "quic://192.168.0.1:1116"
+          "127.0.0.1:1106"
+          "quic://127.0.0.1:1116"
         ];
         peerId = "12D3KooWDA4TWKJg2M3sosfTNx2RSaeM7wr4rfcVzpDbtX3sezqP";
         types = [ "consensus" ];
@@ -85,13 +90,12 @@ let
       };
     in
     {
-      metric.addr = "0.0.0.0:8000";
+      metric.addr = "";
       log = {
         defaultLevel = "";
         namedLevels = { };
         production = false;
       };
-      networkStorePath = "/networkStore";
       drpc.stream = {
         timeoutMilliseconds = 1000;
         maxMsgSizeMb = 256;
@@ -113,11 +117,18 @@ pkgs.nixosTest {
   nodes = {
     server = {
 
-      imports = [
-        modules.any-sync-consensus
-        modules.any-sync-coordinator
-        modules.any-sync-filenode
-        modules.any-sync-node
+      # imports = [
+      #   modules.any-sync-consensus
+      #   modules.any-sync-coordinator
+      #   modules.any-sync-filenode
+      #   modules.any-sync-node
+      # ];
+
+      imports = with self.nixosModules; [
+        any-sync-consensus
+        any-sync-coordinator
+        any-sync-filenode
+        any-sync-node
       ];
 
       networking = {
@@ -130,11 +141,17 @@ pkgs.nixosTest {
         ];
       };
 
-      services.mongodb.enable = true;
+      services.mongodb = {
+        enable = true;
+        package = pkgs.mongodb-ce;
+      };
 
       # Needs to load RedisBloom module for production use
       # loadModule = [ "/path/to/redisbloom.so" ];
-      services.redis.servers.anysync-files.enable = true;
+      services.redis.servers.anysync-files = {
+        enable = true;
+        port = 6379;
+      };
 
       services.minio = {
         enable = true;
@@ -154,12 +171,13 @@ pkgs.nixosTest {
               signingKey = "sg2O8EAvfsPI36RT4uqevZLD1XLG7b3k6O6g7mQMc9Ig8N4vZuiM/8xkhk852dZebLGx7VqEwgCrl4aMCi/whw==";
             };
             mongo = {
-              connect = "mongodb://127.0.0.1:27001/?w=majority";
+              connect = "mongodb://127.0.0.1:27017/?directConnection=true";
               database = "consensus";
               logCollection = "log";
             };
+            networkStorePath = ".";
           }
-          // getCommonOptions 1006;
+          // getCommonOptions 1106;
       };
 
       services.any-sync-coordinator = {
@@ -173,7 +191,7 @@ pkgs.nixosTest {
               signingKey = "sg2O8EAvfsPI36RT4uqevZLD1XLG7b3k6O6g7mQMc9Ig8N4vZuiM/8xkhk852dZebLGx7VqEwgCrl4aMCi/whw==";
             };
             mongo = {
-              connect = "mongodb://127.0.0.1:27001";
+              connect = "mongodb://127.0.0.1:27017";
               database = "coordinator";
               log = "log";
               spaces = "spaces";
@@ -187,8 +205,9 @@ pkgs.nixosTest {
               spaceMembersWrite = 1000;
               sharedSpacesLimit = 1000;
             };
+            networkStorePath = ".";
           }
-          // getCommonOptions 1004;
+          // getCommonOptions 1104;
       };
 
       services.any-sync-filenode = {
@@ -220,15 +239,17 @@ pkgs.nixosTest {
               isCluster = false;
               url = "redis://127.0.0.1:6379?dial_timeout=3&read_timeout=6s";
             };
+
+            networkStorePath = ".";
           }
-          // getCommonOptions 1005;
+          // getCommonOptions 1105;
       };
 
       services.any-sync-node = {
         enable = true;
         replicas =
-          map
-            (opts: {
+          lib.imap1
+            (i: opts: {
               config =
                 networkConfig
                 // {
@@ -250,6 +271,8 @@ pkgs.nixosTest {
                     periodicSyncHours = 2;
                     syncOnStart = true;
                   };
+
+                  networkStorePath = ".";
                 }
                 // getCommonOptions opts.port;
             })
@@ -258,19 +281,19 @@ pkgs.nixosTest {
                 peerId = "12D3KooWQFamdVnYhGqda7un21XtQcZu8fPnmU5ARgDvuJiRGgNq";
                 peerKey = "MOSek7QTbMbS0D56judvhLM1C8IWASbobszsX+AEKmDWeWK/N9PXEn+SOdFtMvSkkq3Ivg2AeXQgqJp1DEJDJg==";
                 signingKey = "MOSek7QTbMbS0D56judvhLM1C8IWASbobszsX+AEKmDWeWK/N9PXEn+SOdFtMvSkkq3Ivg2AeXQgqJp1DEJDJg==";
-                port = 1001;
+                port = 1101;
               }
               {
                 peerId = "12D3KooWDRVzZ1zeoHb6gS8Pez33mYUNxdmzVfE6R6mUruXSCB6s";
                 peerKey = "NlqXQj7RyEd/SlW3q3V9mfwYnrMHadxGIfbvf7UtdEo1kzxtMUAMfP/wWxP/4gqiwCNrVdgii5sUku5GbwWyRA==";
                 signingKey = "NlqXQj7RyEd/SlW3q3V9mfwYnrMHadxGIfbvf7UtdEo1kzxtMUAMfP/wWxP/4gqiwCNrVdgii5sUku5GbwWyRA==";
-                port = 1002;
+                port = 1102;
               }
               {
                 peerId = "12D3KooWKhZoPy68FJAcmnm6YjetxvAfndgfcrqgcyq7NCnEJ3Zn";
                 peerKey = "pgOqz9EL+eVvKn/V54Bg7xfcUkRF0D3HgM3eJEL7kw2S1vS0GtqMWlp/zYd6YIq+Do6EWGBapzGy68VQUd3EjQ==";
                 signingKey = "pgOqz9EL+eVvKn/V54Bg7xfcUkRF0D3HgM3eJEL7kw2S1vS0GtqMWlp/zYd6YIq+Do6EWGBapzGy68VQUd3EjQ==";
-                port = 1003;
+                port = 1103;
               }
             ];
       };
@@ -298,12 +321,12 @@ pkgs.nixosTest {
     client.copy_from_host("${clientConfigPath}", "/tmp/any-sync-client.yml")
 
     # Wait for services to be up
-    server.waitForUnit("any-sync-node-1.service");
-    server.waitForUnit("any-sync-node-2.service");
-    server.waitForUnit("any-sync-node-3.service");
-    server.waitForUnit("any-sync-filenode.service");
-    server.waitForUnit("any-sync-coordinator.service");
-    server.waitForUnit("any-sync-consensus.service");
+    server.wait_for_unit("any-sync-node-1.service");
+    server.wait_for_unit("any-sync-node-2.service");
+    server.wait_for_unit("any-sync-node-3.service");
+    server.wait_for_unit("any-sync-filenode.service");
+    server.wait_for_unit("any-sync-coordinator.service");
+    server.wait_for_unit("any-sync-consensus.service");
 
     # netcheck from client
     client.succeed("any-sync-netcheck -c /tmp/any-sync-client.yml");

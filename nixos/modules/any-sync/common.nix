@@ -4,14 +4,22 @@ with lib;
 {
   # Helper function add default user and group if needed
   addUserAndGroup = cfg: user: group: {
-    users.users.${user} =
-      mkIf cfg.user == user {
-        isSystemUser = true;
-        group = group;
-        createHome = false;
-      };
+    # users.users.${user} =
+    #   mkIf cfg.user == user {
+    #     isSystemUser = true;
+    #     group = group;
+    #     createHome = false;
+    #   };
 
-    users.groups.${group} = mkIf cfg.group == group { };
+    # users.groups.${group} = mkIf cfg.group == group { };
+
+    users.users.${user} = {
+      isSystemUser = true;
+      group = group;
+      createHome = false;
+    };
+
+    users.groups.${group} = { };
   };
 
   userGroupOptions = user: group: {

@@ -74,23 +74,47 @@ in
         }
       ];
 
+      users.users.${user} = {
+        isSystemUser = true;
+        group = group;
+        createHome = false;
+      };
+
+      users.groups.${group} = { };
+
       # create systemd service unit for each replica
       systemd.services = listToAttrs (
         map (
           i:
           nameValuePair "any-sync-node-${toString i}" {
+            after = [ "network.target" ];
+            wants = [
+              "any-sync-filenode.service"
+              "any-sync-consensus.service"
+              "any-sync-coordinator.service"
+            ];
+            wantedBy = [ "multi-user.target" ];
+
+            path = [ pkgs.any-sync-node ];
+
+            unitConfig = {
+              StartLimitBurst = 3;
+            };
+
             serviceConfig = {
               ExecStart = "${pkgs.any-sync-node}/bin/any-sync-node -c ${getConfigPath i}";
               User = user;
               Group = group;
-              Restart = "on-failure";
-              RestartSec = "5s";
-              StateDirectory = "any-sync-${toString i}";
-              WorkingDirectory = "/var/lib/any-sync";
-              PrivateTmp = true;
-              ProtectSystem = "full";
-              NoNewPrivileges = true;
-              LimitNOFILE = 65536;
+              Restart = "no";
+              # ReadWritePaths = [ "/var/lib/network-store/any-sync-node-${toString i}" ];
+              # Restart = "on-failure";
+              # RestartSec = "5s";
+              # StateDirectory = "any-sync-${toString i}";
+              # WorkingDirectory = "/var/lib/any-sync";
+              # PrivateTmp = true;
+              # ProtectSystem = "full";
+              # NoNewPrivileges = true;
+              # LimitNOFILE = 65536;
             };
           }
         ) (range 1 (length cfg.replicas))

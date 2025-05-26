@@ -6,7 +6,7 @@
   };
 
   outputs =
-    { nixpkgs, ... }:
+    { self, nixpkgs, ... }:
     let
       # System types to support.
       supportedSystems = [
@@ -64,12 +64,13 @@
         {
           any-sync-test = pkgs.callPackage ./nixos/tests/any-sync-test.nix {
             inherit pkgs;
-            modules = {
-              any-sync-consensus = ./nixos/modules/any-sync/any-sync-consensus.nix;
-              any-sync-coordinator = ./nixos/modules/any-sync/any-sync-coordinator.nix;
-              any-sync-filenode = ./nixos/modules/any-sync/any-sync-filenode.nix;
-              any-sync-node = ./nixos/modules/any-sync/any-sync-node.nix;
-            };
+            inherit self;
+            # modules = {
+            #   any-sync-consensus = ./nixos/modules/any-sync/any-sync-consensus.nix;
+            #   any-sync-coordinator = ./nixos/modules/any-sync/any-sync-coordinator.nix;
+            #   any-sync-filenode = ./nixos/modules/any-sync/any-sync-filenode.nix;
+            #   any-sync-node = ./nixos/modules/any-sync/any-sync-node.nix;
+            # };
           };
         }
       );
