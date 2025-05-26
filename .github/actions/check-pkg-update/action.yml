@@ -1,11 +1,11 @@
-name: 'Check for Package Updates'
-description: 'Checks if a newer version available'
+name: "Check for Package Updates"
+description: "Checks if a newer version available"
 inputs:
   nix_path:
-    description: 'Path to the Nix package file'
+    description: "Path to the Nix package file"
     required: true
 runs:
-  using: 'composite'
+  using: "composite"
   steps:
     - name: Extract package info
       id: extract
@@ -34,7 +34,7 @@ runs:
       if: ${{ steps.extract.outputs.current_version != steps.check-release.outputs.latest_version }}
       uses: actions/github-script@v6
       env:
-        ISSUE_TITLE: ${{ steps.extract.outputs.issue_title }}
+        ISSUE_TITLE: ${{ steps.check-release.outputs.issue_title }}
       with:
         script: |
           const { data: issues } = await github.rest.issues.listForRepo({
@@ -54,10 +54,10 @@ runs:
 
           core.setOutput('exists', !!existingIssue)
 
-
     - name: Create issue if update available
-      if: ${{ steps.extract.outputs.current_version != steps.check-release.outputs.latest_version
-          && steps.check-existing.outputs.exists == 'false' }}
+      if:
+        ${{ steps.extract.outputs.current_version != steps.check-release.outputs.latest_version
+        && steps.check-existing.outputs.exists == 'false' }}
       uses: actions/github-script@v6
       env:
         ISSUE_TITLE: ${{ steps.check-release.outputs.issue_title }}
