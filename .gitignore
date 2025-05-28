@@ -2,3 +2,4 @@
 result
 temp
 .DS_Store
+.env
