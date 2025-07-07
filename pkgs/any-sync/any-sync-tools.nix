@@ -10,7 +10,7 @@
 ###
 
 let
-  version = "0.2.9";
+  version = "0.2.10";
   maintainers = import ../../maintainers/maintainer-list.nix;
 in
 pkgs.buildGoModule {
