@@ -30,7 +30,7 @@ Makefile                           # Build + upload to S3 binary cache
 
 ## Build System
 
-- **Single input**: `nixpkgs` (nixos-25.05)
+- **Single input**: `nixpkgs` (nixos-26.05)
 - **Supported systems**: x86_64-linux, x86_64-darwin, aarch64-linux, aarch64-darwin
 - **Dev shell**: `nixfmt-rfc-style` (formatter) + `nixd` (LSP)
 
