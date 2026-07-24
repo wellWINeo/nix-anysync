@@ -56,10 +56,13 @@
         system:
         let
           pkgs = nixpkgsFor.${system};
+          allPackages = nixpkgs.lib.genAttrs packageNames (name: pkgs.${name});
         in
-        # Generate package outputs dynamically from package names
-        # This avoids duplicating package names in multiple places
-        nixpkgs.lib.genAttrs packageNames (name: pkgs.${name})
+        nixpkgs.lib.filterAttrs (
+          _: package:
+          nixpkgs.lib.meta.availableOn { inherit system; } package
+          && !(package.meta.broken or false)
+        ) allPackages
       );
 
       checks = forAllSystems (
