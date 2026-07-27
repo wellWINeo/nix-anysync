@@ -1,4 +1,9 @@
-{ pkgs, modules, ... }:
+{
+  nixosModules,
+  pkgs,
+  lib,
+  ...
+}:
 
 let
   maintainers = import ../../maintainers/maintainer-list.nix;
@@ -113,11 +118,11 @@ pkgs.testers.nixosTest {
   nodes = {
     server = {
 
-      imports = [
-        modules.any-sync-consensus
-        modules.any-sync-coordinator
-        modules.any-sync-filenode
-        modules.any-sync-node
+      imports = with nixosModules; [
+        any-sync-consensus
+        any-sync-coordinator
+        any-sync-filenode
+        any-sync-node
       ];
 
       networking = {
