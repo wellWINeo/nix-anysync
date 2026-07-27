@@ -60,12 +60,18 @@ in
         wantedBy = [ "multi-user.target" ];
 
         path = [ pkgs.any-sync-filenode ];
+
+        unitConfig = {
+          StartLimitBurst = 3;
+          StartLimitIntervalSec = 60;
+        };
+
         serviceConfig = {
           ExecStart = "${pkgs.any-sync-filenode}/bin/any-sync-filenode -c ${configPath}";
           User = user;
           Group = group;
           Restart = "on-failure";
-          RestartSec = "5s";
+          RestartSec = "15s";
           StateDirectory = "any-sync/file-node";
           WorkingDirectory = "/var/lib/any-sync";
           PrivateTmp = true;

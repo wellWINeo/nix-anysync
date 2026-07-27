@@ -56,12 +56,18 @@ in
         wantedBy = [ "multi-user.target" ];
 
         path = [ pkgs.any-sync-consensus ];
+
+        unitConfig = {
+          StartLimitBurst = 3;
+          StartLimitIntervalSec = 60;
+        };
+
         serviceConfig = {
           ExecStart = "${pkgs.any-sync-consensus}/bin/any-sync-consensus -c ${configPath}";
           User = user;
           Group = group;
           Restart = "on-failure";
-          RestartSec = "5s";
+          RestartSec = "15s";
           StateDirectory = "any-sync/consensus";
           WorkingDirectory = "/var/lib/any-sync";
           PrivateTmp = true;
