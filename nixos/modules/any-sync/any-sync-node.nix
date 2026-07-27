@@ -93,13 +93,21 @@ in
         map (
           i:
           nameValuePair "any-sync-node-${toString i}" {
+            after = [ "network.target" "any-sync-consensus.service" "any-sync-coordinator.service"];
+            wants = [
+              "any-sync-filenode.service"
+              "any-sync-consensus.service"
+              "any-sync-coordinator.service"
+            ];
+            wantedBy = [ "multi-user.target" ];
+
+            path = [ pkgs.any-sync-node ];
             serviceConfig = {
               ExecStart = "${pkgs.any-sync-node}/bin/any-sync-node -c ${getConfigPath i}";
               User = user;
               Group = group;
               Restart = "on-failure";
               RestartSec = "5s";
-              StateDirectory = "any-sync-${toString i}";
               StateDirectory = "any-sync/node-${toString i}";
               WorkingDirectory = "/var/lib/any-sync";
               PrivateTmp = true;

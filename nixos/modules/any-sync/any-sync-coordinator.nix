@@ -49,13 +49,18 @@ in
       assertions = [ (common.assertConfig cfg) ];
 
       systemd.services.any-sync-coordinator = {
+        after = [ "network.target" "mongodb.service" "any-sync-consensus.service" ];
+        wants = [ "mongodb.service" ];
+        wantedBy = [ "multi-user.target" ];
+
+        path = [ pkgs.any-sync-coordinator ];
         serviceConfig = {
           ExecStart = "${pkgs.any-sync-coordinator}/bin/any-sync-coordinator -c ${configPath}";
           User = user;
           Group = group;
           Restart = "on-failure";
           RestartSec = "5s";
-          StateDirectory = "any-sync";
+          StateDirectory = "any-sync/coordinator";
           WorkingDirectory = "/var/lib/any-sync";
           PrivateTmp = true;
           ProtectSystem = "full";

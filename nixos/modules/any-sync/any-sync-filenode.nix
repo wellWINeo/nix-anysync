@@ -29,7 +29,7 @@ in
         default = null;
         description = ''
           any-sync-filenode configuration
-          Reference https://github.com/anyproto/any-sync-filenode/blob/main/etc/any-sync-filenode.yml 
+          Reference https://github.com/anyproto/any-sync-filenode/blob/main/etc/any-sync-filenode.yml
         '';
       };
 
@@ -38,7 +38,7 @@ in
         default = null;
         description = ''
           any-sync-filenode configuration's path
-          Reference https://github.com/anyproto/any-sync-filenode/blob/main/etc/any-sync-filenode.yml 
+          Reference https://github.com/anyproto/any-sync-filenode/blob/main/etc/any-sync-filenode.yml
         '';
       };
     }
@@ -50,13 +50,23 @@ in
       assertions = [ (common.assertConfig cfg) ];
 
       systemd.services.any-sync-filenode = {
+        after = [ "network.target" "any-sync-consensus.service" "any-sync-coordinator.service" ];
+        wants = [
+          "redis-anysync-files.service"
+          "minio.service"
+          "any-sync-consensus.service"
+          "any-sync-coordinator.service"
+        ];
+        wantedBy = [ "multi-user.target" ];
+
+        path = [ pkgs.any-sync-filenode ];
         serviceConfig = {
           ExecStart = "${pkgs.any-sync-filenode}/bin/any-sync-filenode -c ${configPath}";
           User = user;
           Group = group;
           Restart = "on-failure";
           RestartSec = "5s";
-          StateDirectory = "any-sync";
+          StateDirectory = "any-sync/file-node";
           WorkingDirectory = "/var/lib/any-sync";
           PrivateTmp = true;
           ProtectSystem = "full";

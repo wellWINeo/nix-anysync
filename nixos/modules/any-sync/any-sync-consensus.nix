@@ -51,13 +51,18 @@ in
       assertions = [ (common.assertConfig cfg) ];
 
       systemd.services.any-sync-consensus = {
+        after = [ "network.target" "mongodb.service" ];
+        wants = [ "mongodb.service" ];
+        wantedBy = [ "multi-user.target" ];
+
+        path = [ pkgs.any-sync-consensus ];
         serviceConfig = {
           ExecStart = "${pkgs.any-sync-consensus}/bin/any-sync-consensus -c ${configPath}";
           User = user;
           Group = group;
           Restart = "on-failure";
           RestartSec = "5s";
-          StateDirectory = "any-sync";
+          StateDirectory = "any-sync/consensus";
           WorkingDirectory = "/var/lib/any-sync";
           PrivateTmp = true;
           ProtectSystem = "full";
