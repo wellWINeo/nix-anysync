@@ -90,9 +90,9 @@ let
       };
     in
     {
-      metric.addr = "0.0.0.0:8000";
+      metric.addr = "";
       log = {
-        defaultLevel = "";
+        defaultLevel = "warn";
         namedLevels = { };
         production = false;
       };
@@ -134,17 +134,37 @@ pkgs.testers.nixosTest {
         ];
       };
 
-      services.mongodb.enable = true;
+      services.mongodb = {
+        enable = true;
+        package = pkgs.mongodb-ce;
+        quiet = true;
+        replSetName = "rs0";
+        initialScript = pkgs.writeText "mongod-init-rs.js" ''
+          rs.initiate({_id: "rs0", members: [{_id: 0, host: "127.0.0.1:27017"}]});
+        '';
+      };
 
-      # Needs to load RedisBloom module for production use
-      # loadModule = [ "/path/to/redisbloom.so" ];
-      services.redis.servers.anysync-files.enable = true;
+      # Needs to load bloom filter module
+      services.redis.package = pkgs.valkey.overrideAttrs (oldAttrs: {
+        doCheck = false;
+        nativeBuildInputs = oldAttrs.nativeBuildInputs or [ ] ++ [ pkgs.makeWrapper ];
+        postInstall = ''
+          wrapProgram $out/bin/valkey-server \
+            --add-flags "--loadmodule ${pkgs.valkey-bloom}/lib/libvalkey_bloom.so"
+        '';
+      });
+      services.redis.servers.anysync-files = {
+        enable = true;
+        port = 6379;
+      };
 
       services.minio = {
         enable = true;
         browser = false;
-        accessKey = "minioAccess";
-        secretKey = "minioSecret";
+        rootCredentialsFile = pkgs.writeText "minio-root-credentials" ''
+          MINIO_ROOT_USER=minioAccess
+          MINIO_ROOT_PASSWORD=minioSecret
+        '';
       };
 
       services.any-sync-consensus = {
@@ -280,6 +300,9 @@ pkgs.testers.nixosTest {
               }
             ];
       };
+
+      # Add MongoDB shell for replica set status check in tests
+      environment.systemPackages = [ pkgs.mongodb-ce ];
     };
 
     client = {
@@ -299,6 +322,14 @@ pkgs.testers.nixosTest {
 
   testScript = ''
     start_all()
+
+    # Wait for MongoDB to be ready with replica set
+    server.wait_for_unit("mongodb.service");
+    server.wait_for_open_port(27017);
+
+    # Wait for replica set to be initialized (change streams need replica set)
+    # Using a timeout of 30 seconds to wait for rs.initiate() to complete
+    server.succeed("for i in $(seq 1 30); do if mongosh --eval 'rs.status()' 2>/dev/null | grep -q 'PRIMARY\\|SECONDARY' || mongo --eval 'rs.status()' 2>/dev/null | grep -q 'PRIMARY\\|SECONDARY'; then break; fi; sleep 1; done")
 
     # Copy client.yml to client node
     client.copy_from_host("${clientConfigPath}", "/tmp/any-sync-client.yml")
