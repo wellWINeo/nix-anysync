@@ -335,12 +335,31 @@ pkgs.testers.nixosTest {
     client.copy_from_host("${clientConfigPath}", "/tmp/any-sync-client.yml")
 
     # Wait for services to be up
-    server.waitForUnit("any-sync-node-1.service");
-    server.waitForUnit("any-sync-node-2.service");
-    server.waitForUnit("any-sync-node-3.service");
-    server.waitForUnit("any-sync-filenode.service");
-    server.waitForUnit("any-sync-coordinator.service");
-    server.waitForUnit("any-sync-consensus.service");
+    server.wait_for_unit("any-sync-consensus.service");
+    server.wait_for_unit("any-sync-coordinator.service");
+    server.wait_for_unit("any-sync-filenode.service");
+    server.wait_for_unit("any-sync-node-1.service");
+    server.wait_for_unit("any-sync-node-2.service");
+    server.wait_for_unit("any-sync-node-3.service");
+
+    # node-1
+    server.wait_for_open_port(1101);  # tcp yamux
+    server.wait_until_succeeds("ss -unl | grep -q :1111");  # quic
+    # node-2
+    server.wait_for_open_port(1102);  # tcp yamux
+    server.wait_until_succeeds("ss -unl | grep -q :1112");  # quic
+    # node-3
+    server.wait_for_open_port(1103);  # tcp yamux
+    server.wait_until_succeeds("ss -unl | grep -q :1113");  # quic
+    # coordinator
+    server.wait_for_open_port(1104);  # tcp yamux
+    server.wait_until_succeeds("ss -unl | grep -q :1114")  # quic
+    # filenode
+    server.wait_for_open_port(1105);  # tcp yamux
+    server.wait_until_succeeds("ss -unl | grep -q :1115");  # quic
+    # consesus
+    server.wait_for_open_port(1106);  # tcp yamux
+    server.wait_until_succeeds("ss -unl | grep -q :1116")  # quic
 
     # netcheck from client
     client.succeed("any-sync-netcheck -c /tmp/any-sync-client.yml");
