@@ -44,8 +44,8 @@ in
     }
     // (common.userGroupOptions user group);
 
-  config =
-    mkIf cfg.enable {
+  config = mkIf cfg.enable (
+    {
       assertions = [ (common.assertConfig cfg) ];
 
       systemd.services.any-sync-coordinator = {
@@ -62,8 +62,8 @@ in
 
         serviceConfig = {
           ExecStart = "${pkgs.any-sync-coordinator}/bin/any-sync-coordinator -c ${configPath}";
-          User = user;
-          Group = group;
+          User = cfg.user;
+          Group = cfg.group;
           Restart = "on-failure";
           RestartSec = "15s";
           StateDirectory = "any-sync/coordinator";
@@ -75,5 +75,6 @@ in
         };
       };
     }
-    // (common.addUserAndGroup cfg user group);
+    // (common.addUserAndGroup cfg user group)
+  );
 }

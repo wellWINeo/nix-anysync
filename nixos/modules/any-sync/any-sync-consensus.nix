@@ -45,9 +45,8 @@ in
     }
     // (common.userGroupOptions user group);
 
-  config =
-    mkIf cfg.enable {
-
+  config = mkIf cfg.enable (
+    {
       assertions = [ (common.assertConfig cfg) ];
 
       systemd.services.any-sync-consensus = {
@@ -64,8 +63,8 @@ in
 
         serviceConfig = {
           ExecStart = "${pkgs.any-sync-consensus}/bin/any-sync-consensus -c ${configPath}";
-          User = user;
-          Group = group;
+          User = cfg.user;
+          Group = cfg.group;
           Restart = "on-failure";
           RestartSec = "15s";
           StateDirectory = "any-sync/consensus";
@@ -77,5 +76,6 @@ in
         };
       };
     }
-    // (common.addUserAndGroup cfg user group);
+    // (common.addUserAndGroup cfg user group)
+  );
 }

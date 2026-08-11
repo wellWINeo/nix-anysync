@@ -44,9 +44,8 @@ in
     }
     // (common.userGroupOptions user group);
 
-  config =
-    mkIf cfg.enable {
-
+  config = mkIf cfg.enable (
+    {
       assertions = [ (common.assertConfig cfg) ];
 
       systemd.services.any-sync-filenode = {
@@ -68,8 +67,8 @@ in
 
         serviceConfig = {
           ExecStart = "${pkgs.any-sync-filenode}/bin/any-sync-filenode -c ${configPath}";
-          User = user;
-          Group = group;
+          User = cfg.user;
+          Group = cfg.group;
           Restart = "on-failure";
           RestartSec = "15s";
           StateDirectory = "any-sync/file-node";
@@ -81,5 +80,6 @@ in
         };
       };
     }
-    // (common.addUserAndGroup cfg user group);
+    // (common.addUserAndGroup cfg user group)
+  );
 }

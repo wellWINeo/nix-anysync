@@ -67,8 +67,8 @@ in
     }
     // (common.userGroupOptions user group);
 
-  config =
-    mkIf cfg.enable {
+  config = mkIf cfg.enable (
+    {
       assertions = [
         {
           # Ensures that all replicas has config or config path
@@ -110,8 +110,8 @@ in
 
             serviceConfig = {
               ExecStart = "${pkgs.any-sync-node}/bin/any-sync-node -c ${getConfigPath i}";
-              User = user;
-              Group = group;
+              User = cfg.user;
+              Group = cfg.group;
               Restart = "on-failure";
               RestartSec = "15s";
               StateDirectory = "any-sync/node-${toString i}";
@@ -125,5 +125,6 @@ in
         ) (range 1 (length cfg.replicas))
       );
     }
-    // (common.addUserAndGroup cfg user group);
+    // (common.addUserAndGroup cfg user group)
+  );
 }
