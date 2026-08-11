@@ -29,7 +29,7 @@ in
         default = null;
         description = ''
           any-sync-filenode configuration
-          Reference https://github.com/anyproto/any-sync-filenode/blob/main/etc/any-sync-filenode.yml 
+          Reference https://github.com/anyproto/any-sync-filenode/blob/main/etc/any-sync-filenode.yml
         '';
       };
 
@@ -38,25 +38,40 @@ in
         default = null;
         description = ''
           any-sync-filenode configuration's path
-          Reference https://github.com/anyproto/any-sync-filenode/blob/main/etc/any-sync-filenode.yml 
+          Reference https://github.com/anyproto/any-sync-filenode/blob/main/etc/any-sync-filenode.yml
         '';
       };
     }
     // (common.userGroupOptions user group);
 
-  config =
-    mkIf cfg.enable {
-
+  config = mkIf cfg.enable (
+    {
       assertions = [ (common.assertConfig cfg) ];
 
       systemd.services.any-sync-filenode = {
+        after = [ "network.target" "any-sync-consensus.service" "any-sync-coordinator.service" ];
+        wants = [
+          "redis-anysync-files.service"
+          "minio.service"
+          "any-sync-consensus.service"
+          "any-sync-coordinator.service"
+        ];
+        wantedBy = [ "multi-user.target" ];
+
+        path = [ pkgs.any-sync-filenode ];
+
+        unitConfig = {
+          StartLimitBurst = 3;
+          StartLimitIntervalSec = 60;
+        };
+
         serviceConfig = {
           ExecStart = "${pkgs.any-sync-filenode}/bin/any-sync-filenode -c ${configPath}";
-          User = user;
-          Group = group;
+          User = cfg.user;
+          Group = cfg.group;
           Restart = "on-failure";
-          RestartSec = "5s";
-          StateDirectory = "any-sync";
+          RestartSec = "15s";
+          StateDirectory = "any-sync/file-node";
           WorkingDirectory = "/var/lib/any-sync";
           PrivateTmp = true;
           ProtectSystem = "full";
@@ -65,5 +80,6 @@ in
         };
       };
     }
-    // (common.addUserAndGroup cfg user group);
+    // (common.addUserAndGroup cfg user group)
+  );
 }

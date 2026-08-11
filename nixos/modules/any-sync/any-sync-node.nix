@@ -11,16 +11,19 @@ let
   user = "any-sync";
   group = "any-sync";
 
-  configPaths = imap1 (
-    i: replica: pkgs.writeText "any-sync-node-${toString i}.yml" (builtins.toJSON replica.config)
-  ) cfg.replicas;
-
-  getConfigPath =
-    i:
-    let
-      replicaOpts = elemAt cfg.replicas (i - 1);
-    in
-    if replicaOpts.configPath != null then replicaOpts.configPath else elemAt configPaths (i - 1);
+  # Helper to generate config with storage defaults injected from state directory
+  getConfigPath = i: let
+    r = elemAt cfg.replicas (i - 1);
+    stateDir = "/var/lib/any-sync/node-${toString i}";
+    r_mod = recursiveUpdate r {
+      config = {
+        storage = {
+          path = stateDir + "/storage";
+          anyStorePath = stateDir + "/anyStorage";
+        };
+      };
+    };
+  in common.getConfigPath r_mod "any-sync-filenode-${toString i}";
 
   common = import ./common.nix {
     inherit pkgs;
@@ -64,28 +67,54 @@ in
     }
     // (common.userGroupOptions user group);
 
-  config =
-    mkIf cfg.enable {
+  config = mkIf cfg.enable (
+    {
       assertions = [
         {
           # Ensures that all replicas has config or config path
           assertion = lists.all (cfg: cfg.config != null || cfg.configPath != null) cfg.replicas;
           message = "One of any-sync-node replica hasn't config or configPath";
         }
-      ];
+      ] ++ (imap1 (
+        i: r: {
+          assertion = !(r.config != null && (r.config ? storage));
+          message = ''
+            Storage configuration in replica ${toString i} will be overridden by systemd StateDirectory defaults.
+            Storage path and anyStorePath are automatically set to:
+              path: /var/lib/any-sync/node-${toString i}/storage
+              anyStorePath: /var/lib/any-sync/node-${toString i}/anyStorage
+            To use custom storage paths, provide a configPath to your own yaml file instead of inline config.
+          '';
+        }
+      ) cfg.replicas);
 
       # create systemd service unit for each replica
       systemd.services = listToAttrs (
         map (
           i:
           nameValuePair "any-sync-node-${toString i}" {
+            after = [ "network.target" "any-sync-consensus.service" "any-sync-coordinator.service"];
+            wants = [
+              "any-sync-filenode.service"
+              "any-sync-consensus.service"
+              "any-sync-coordinator.service"
+            ];
+            wantedBy = [ "multi-user.target" ];
+
+            path = [ pkgs.any-sync-node ];
+
+            unitConfig = {
+              StartLimitBurst = 3;
+              StartLimitIntervalSec = 60;
+            };
+
             serviceConfig = {
               ExecStart = "${pkgs.any-sync-node}/bin/any-sync-node -c ${getConfigPath i}";
-              User = user;
-              Group = group;
+              User = cfg.user;
+              Group = cfg.group;
               Restart = "on-failure";
-              RestartSec = "5s";
-              StateDirectory = "any-sync-${toString i}";
+              RestartSec = "15s";
+              StateDirectory = "any-sync/node-${toString i}";
               WorkingDirectory = "/var/lib/any-sync";
               PrivateTmp = true;
               ProtectSystem = "full";
@@ -96,5 +125,6 @@ in
         ) (range 1 (length cfg.replicas))
       );
     }
-    // (common.addUserAndGroup cfg user group);
+    // (common.addUserAndGroup cfg user group)
+  );
 }

@@ -2,27 +2,26 @@
 with lib;
 
 {
-  # Helper function add default user and group if needed
-  addUserAndGroup = cfg: user: group: {
-    users.users.${user} =
-      mkIf cfg.user == user {
-        isSystemUser = true;
-        group = group;
-        createHome = false;
-      };
+  # Helper function to add the configured user and group
+  addUserAndGroup = cfg: _defaultUser: _defaultGroup: {
+    users.users.${cfg.user} = {
+      isSystemUser = true;
+      group = cfg.group;
+      createHome = false;
+    };
 
-    users.groups.${group} = mkIf cfg.group == group { };
+    users.groups.${cfg.group} = { };
   };
 
   userGroupOptions = user: group: {
     user = mkOption {
-      type = types.string;
+      type = types.str;
       description = "User";
       default = user;
     };
 
     group = mkOption {
-      type = types.string;
+      type = types.str;
       description = "Group";
       default = group;
     };
