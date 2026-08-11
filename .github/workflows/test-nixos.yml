@@ -1,0 +1,55 @@
+name: Test NixOS VM
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  nixos-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4.2.2
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+
+      - name: Verify KVM availability
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ ! -c /dev/kvm ]]; then
+            echo "::error::The runner does not provide /dev/kvm"
+            exit 1
+          fi
+
+          # Nix's daemon may run the build as a nixbld user rather than as the
+          # GitHub Actions runner. Grant the device access only when required.
+          if [[ ! -r /dev/kvm || ! -w /dev/kvm ]]; then
+            sudo chmod o+rw /dev/kvm
+          fi
+
+          build_users="$(getent passwd | awk -F: '$1 ~ /^nixbld[0-9]+$/ { print $1 }')"
+          build_users="$(printf '%s\n%s\n' "$(id -un)" "$build_users")"
+
+          while IFS= read -r build_user; do
+            [[ -n "$build_user" ]] || continue
+            if ! sudo -u "$build_user" -- bash -c '[[ -r /dev/kvm && -w /dev/kvm ]]'; then
+              sudo chmod a+rw /dev/kvm
+              break
+            fi
+          done <<< "$build_users"
+
+          while IFS= read -r build_user; do
+            [[ -n "$build_user" ]] || continue
+            sudo -u "$build_user" -- bash -c '[[ -r /dev/kvm && -w /dev/kvm ]]'
+          done <<< "$build_users"
+
+      - name: Build NixOS VM test
+        run: nix build --show-trace --print-build-logs .#checks.x86_64-linux.any-sync-test
