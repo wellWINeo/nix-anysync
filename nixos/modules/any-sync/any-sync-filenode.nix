@@ -49,7 +49,13 @@ in
       assertions = [ (common.assertConfig cfg) ];
 
       systemd.services.any-sync-filenode = {
-        after = [ "network.target" "any-sync-consensus.service" "any-sync-coordinator.service" ];
+        after = [
+          "network.target"
+          "redis-anysync-files.service"
+          "minio.service"
+          "any-sync-consensus.service"
+          "any-sync-coordinator.service"
+        ];
         wants = [
           "redis-anysync-files.service"
           "minio.service"
@@ -72,7 +78,7 @@ in
           Restart = "on-failure";
           RestartSec = "15s";
           StateDirectory = "any-sync/file-node";
-          WorkingDirectory = "/var/lib/any-sync";
+          WorkingDirectory = "/var/lib/any-sync/file-node";
           PrivateTmp = true;
           ProtectSystem = "full";
           NoNewPrivileges = true;

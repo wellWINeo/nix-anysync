@@ -49,8 +49,15 @@ in
       assertions = [ (common.assertConfig cfg) ];
 
       systemd.services.any-sync-coordinator = {
-        after = [ "network.target" "mongodb.service" "any-sync-consensus.service" ];
-        wants = [ "mongodb.service" ];
+        after = [
+          "network.target"
+          "mongodb.service"
+          "any-sync-consensus.service"
+        ];
+        wants = [
+          "mongodb.service"
+          "any-sync-consensus.service"
+        ];
         wantedBy = [ "multi-user.target" ];
 
         path = [ pkgs.any-sync-coordinator ];
@@ -67,7 +74,7 @@ in
           Restart = "on-failure";
           RestartSec = "15s";
           StateDirectory = "any-sync/coordinator";
-          WorkingDirectory = "/var/lib/any-sync";
+          WorkingDirectory = "/var/lib/any-sync/coordinator";
           PrivateTmp = true;
           ProtectSystem = "full";
           NoNewPrivileges = true;

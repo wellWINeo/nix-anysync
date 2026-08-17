@@ -26,6 +26,8 @@ pkgs.buildGoModule {
 
   vendorHash = "sha256-5AueL3gPLmPpglXs9EBzuT3EyLhGFWwCLZGuHmfMr60=";
 
+  patches = [ ./patches/any-sync-netcheck-exit-status.patch ];
+
   subPackages = [
     "any-sync-network"
     "any-sync-netcheck"

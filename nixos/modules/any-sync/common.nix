@@ -2,15 +2,15 @@
 with lib;
 
 {
-  # Helper function to add the configured user and group
-  addUserAndGroup = cfg: _defaultUser: _defaultGroup: {
-    users.users.${cfg.user} = {
+  # Create only the module's default account; custom accounts are caller-owned.
+  addUserAndGroup = cfg: defaultUser: defaultGroup: {
+    users.users.${defaultUser} = mkIf (cfg.user == defaultUser) {
       isSystemUser = true;
-      group = cfg.group;
+      group = defaultGroup;
       createHome = false;
     };
 
-    users.groups.${cfg.group} = { };
+    users.groups.${defaultGroup} = mkIf (cfg.group == defaultGroup) { };
   };
 
   userGroupOptions = user: group: {

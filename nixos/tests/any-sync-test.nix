@@ -105,6 +105,18 @@ let
     };
 
   clientConfigPath = pkgs.writeText "client.yml" (builtins.toJSON networkConfig);
+  unreachableClientConfigPath = pkgs.writeText "unreachable-client.yml" (
+    builtins.toJSON {
+      inherit (networkConfig) id networkId;
+      nodes = [
+        {
+          addresses = [ "127.0.0.1:1" ];
+          peerId = "12D3KooWQ8nLTT4VTWNwZPJ7p9KCiFMLWriVzivKjMt87g5WwvEP";
+          types = [ "coordinator" ];
+        }
+      ];
+    }
+  );
 in
 pkgs.testers.nixosTest {
 
@@ -301,11 +313,28 @@ pkgs.testers.nixosTest {
             ];
       };
 
-      # Add MongoDB shell for replica set status check in tests
-      environment.systemPackages = [ pkgs.mongodb-ce ];
+      environment.systemPackages = [
+        pkgs.mongodb-ce
+        pkgs.valkey
+        pkgs.minio-client
+      ];
     };
 
     client = {
+      imports = [ nixosModules.any-sync-consensus ];
+      users.groups.any-sync-test = { };
+      users.users.any-sync-test = {
+        isNormalUser = true;
+        group = "any-sync-test";
+      };
+      services.any-sync-consensus = {
+        enable = true;
+        user = "any-sync-test";
+        group = "any-sync-test";
+        config = { };
+      };
+      systemd.services.any-sync-consensus.wantedBy = lib.mkForce [ ];
+
       networking = {
         useDHCP = false;
         interfaces.eth1.ipv4.addresses = [
@@ -328,11 +357,22 @@ pkgs.testers.nixosTest {
     server.wait_for_open_port(27017);
 
     # Wait for replica set to be initialized (change streams need replica set)
-    # Using a timeout of 30 seconds to wait for rs.initiate() to complete
-    server.succeed("for i in $(seq 1 30); do if mongosh --eval 'rs.status()' 2>/dev/null | grep -q 'PRIMARY\\|SECONDARY' || mongo --eval 'rs.status()' 2>/dev/null | grep -q 'PRIMARY\\|SECONDARY'; then break; fi; sleep 1; done")
+    server.succeed("for i in $(seq 1 30); do mongosh --quiet --eval 'db.hello().isWritablePrimary' 2>/dev/null | grep -qx true && exit 0; sleep 1; done; exit 1")
+    server.succeed("mongosh --quiet --eval 'db.hello().setName' | grep -qx rs0")
+    server.wait_for_unit("redis-anysync-files.service")
+    server.wait_for_open_port(6379)
+    server.succeed("valkey-cli -p 6379 PING | grep -qx PONG")
+    server.succeed("valkey-cli -p 6379 BF.ADD anysync-test-bloom probe | grep -qx 1")
+    server.succeed("valkey-cli -p 6379 BF.EXISTS anysync-test-bloom probe | grep -qx 1")
+    server.wait_for_unit("minio.service")
+    server.wait_for_open_port(9000)
+    server.succeed("export MC_CONFIG_DIR=/tmp/mc; mc alias set local http://127.0.0.1:9000 minioAccess minioSecret; mc mb --ignore-existing local/minio-bucket; printf any-sync-test | mc pipe local/minio-bucket/probe; test \\\"$(mc cat local/minio-bucket/probe)\\\" = any-sync-test")
 
-    # Copy client.yml to client node
     client.copy_from_host("${clientConfigPath}", "/tmp/any-sync-client.yml")
+    client.copy_from_host("${unreachableClientConfigPath}", "/tmp/unreachable-client.yml")
+    client.succeed("getent passwd any-sync-test | grep -q '/home/any-sync-test'")
+    client.succeed("systemctl show --property=User --value any-sync-consensus.service | grep -qx any-sync-test")
+    client.succeed("systemctl show --property=Group --value any-sync-consensus.service | grep -qx any-sync-test")
 
     # Wait for services to be up
     server.wait_for_unit("any-sync-consensus.service");
@@ -361,7 +401,11 @@ pkgs.testers.nixosTest {
     server.wait_for_open_port(1106);  # tcp yamux
     server.wait_until_succeeds("ss -unl | grep -q :1116")  # quic
 
-    # netcheck from client
+    server.succeed("systemctl show -p After any-sync-filenode.service | grep -q 'redis-anysync-files.service'")
+    server.succeed("systemctl show -p After any-sync-filenode.service | grep -q 'minio.service'")
+    server.succeed("systemctl show -p After any-sync-node-1.service | grep -q 'any-sync-filenode.service'")
+    server.succeed("for dir in consensus coordinator file-node node-1 node-2 node-3; do su -s /bin/sh any-sync -c \"test -w /var/lib/any-sync/$dir\"; done")
+    client.fail("any-sync-netcheck -c /tmp/unreachable-client.yml")
     client.succeed("any-sync-netcheck -c /tmp/any-sync-client.yml");
   '';
 }
