@@ -357,7 +357,7 @@ pkgs.testers.nixosTest {
     server.wait_for_open_port(27017);
 
     # Wait for replica set to be initialized (change streams need replica set)
-    server.succeed("for i in $(seq 1 30); do mongosh --quiet --eval 'db.hello().isWritablePrimary' 2>/dev/null | grep -qx true && exit 0; sleep 1; done; exit 1")
+    server.succeed("for i in $(seq 1 30); do mongosh --quiet --eval 'print(db.hello().isWritablePrimary)' 2>/dev/null | grep -qx true && exit 0; sleep 1; done; exit 1")
     server.succeed("mongosh --quiet --eval 'db.hello().setName' | grep -qx rs0")
     server.wait_for_unit("redis-anysync-files.service")
     server.wait_for_open_port(6379)
