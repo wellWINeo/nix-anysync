@@ -357,8 +357,8 @@ pkgs.testers.nixosTest {
     server.wait_for_open_port(27017);
 
     # Wait for replica set to be initialized (change streams need replica set)
-    server.succeed("for i in $(seq 1 30); do mongosh --host 127.0.0.1:27017 --quiet --eval 'rs.status()' 2>/dev/null | grep -q PRIMARY && exit 0; sleep 1; done; exit 1")
-    server.succeed("mongosh --host 127.0.0.1:27017 --quiet --eval 'rs.status()' | grep -q 'rs0'")
+    server.succeed("for i in $(seq 1 30); do (mongosh --host 127.0.0.1:27017 --quiet --eval 'rs.status()' 2>/dev/null | grep -q PRIMARY || mongo --host 127.0.0.1:27017 --quiet --eval 'rs.status()' 2>/dev/null | grep -q PRIMARY) && exit 0; sleep 1; done; exit 1")
+    server.succeed("(mongosh --host 127.0.0.1:27017 --quiet --eval 'rs.status()' 2>/dev/null || mongo --host 127.0.0.1:27017 --quiet --eval 'rs.status()') | grep -q 'rs0'")
     server.wait_for_unit("redis-anysync-files.service")
     server.wait_for_open_port(6379)
     server.succeed("valkey-cli -p 6379 PING | grep -qx PONG")
