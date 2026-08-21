@@ -170,8 +170,10 @@ pkgs.testers.nixosTest {
         port = 6379;
         settings.dir = "/var/lib/redis-anysync-files";
       };
-      systemd.services.redis-anysync-files.serviceConfig.WorkingDirectory =
-        "/var/lib/redis-anysync-files";
+      systemd.services.redis-anysync-files.serviceConfig = {
+        Type = "simple";
+        WorkingDirectory = "/var/lib/redis-anysync-files";
+      };
 
       services.minio = {
         enable = true;
