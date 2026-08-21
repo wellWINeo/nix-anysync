@@ -171,7 +171,7 @@ pkgs.testers.nixosTest {
         settings.dir = "/var/lib/redis-anysync-files";
       };
       systemd.services.redis-anysync-files.serviceConfig = {
-        Type = "simple";
+        Type = lib.mkForce "simple";
         WorkingDirectory = "/var/lib/redis-anysync-files";
       };
 
