@@ -371,7 +371,7 @@ pkgs.testers.nixosTest {
     server.succeed("valkey-cli -p 6379 BF.EXISTS anysync-test-bloom probe | grep -qx 1")
     server.wait_for_unit("minio.service")
     server.wait_for_open_port(9000)
-    server.succeed("export MC_CONFIG_DIR=/tmp/mc; mc alias set local http://127.0.0.1:9000 minioAccess minioSecret; mc mb --ignore-existing local/minio-bucket; printf any-sync-test > /tmp/probe; mc cp /tmp/probe local/minio-bucket/probe; mc cp local/minio-bucket/probe /tmp/probe-downloaded; test \\\"$(cat /tmp/probe-downloaded)\\\" = any-sync-test")
+    server.succeed("export MC_CONFIG_DIR=/tmp/mc; mc alias set local http://127.0.0.1:9000 minioAccess minioSecret; mc mb --ignore-existing local/minio-bucket; printf any-sync-test > /tmp/probe; mc cp /tmp/probe local/minio-bucket/probe; mc cp local/minio-bucket/probe /tmp/probe-downloaded; cmp -s /tmp/probe /tmp/probe-downloaded")
 
     client.copy_from_host("${clientConfigPath}", "/tmp/any-sync-client.yml")
     client.copy_from_host("${unreachableClientConfigPath}", "/tmp/unreachable-client.yml")
