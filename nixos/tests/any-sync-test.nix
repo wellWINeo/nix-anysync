@@ -314,7 +314,7 @@ pkgs.testers.nixosTest {
       };
 
       environment.systemPackages = [
-        pkgs.mongodb-ce
+        pkgs.mongosh
         pkgs.valkey
         pkgs.minio-client
       ];
