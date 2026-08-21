@@ -168,6 +168,7 @@ pkgs.testers.nixosTest {
       services.redis.servers.anysync-files = {
         enable = true;
         port = 6379;
+        settings.dir = "/var/lib/redis-anysync-files";
       };
 
       services.minio = {
