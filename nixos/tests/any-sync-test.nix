@@ -147,6 +147,22 @@ pkgs.testers.nixosTest {
 
       networking = {
         useDHCP = false;
+        firewall.allowedTCPPorts = [
+          1101
+          1102
+          1103
+          1104
+          1105
+          1106
+        ];
+        firewall.allowedUDPPorts = [
+          1111
+          1112
+          1113
+          1114
+          1115
+          1116
+        ];
         interfaces.eth1.ipv4.addresses = [
           {
             address = "192.168.0.1";
