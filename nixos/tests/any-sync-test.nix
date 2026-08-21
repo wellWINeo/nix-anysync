@@ -104,6 +104,15 @@ let
       quic = listenOptions (port + 10);
     };
 
+  coordinatorNetworkConfig = networkConfig // {
+    nodes = map (
+      node:
+      if node.peerId == "12D3KooWQ8nLTT4VTWNwZPJ7p9KCiFMLWriVzivKjMt87g5WwvEP" then
+        node // { types = [ ]; }
+      else
+        node
+    ) networkConfig.nodes;
+  };
   clientNetworkConfig = networkConfig // {
     nodes = map (
       node:
@@ -232,7 +241,7 @@ pkgs.testers.nixosTest {
       services.any-sync-coordinator = {
         enable = true;
         config =
-          networkConfig
+          coordinatorNetworkConfig
           // {
             account = {
               peerId = "12D3KooWQ8nLTT4VTWNwZPJ7p9KCiFMLWriVzivKjMt87g5WwvEP";
