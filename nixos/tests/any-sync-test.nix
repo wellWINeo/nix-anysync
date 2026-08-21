@@ -104,7 +104,16 @@ let
       quic = listenOptions (port + 10);
     };
 
-  clientConfigPath = pkgs.writeText "client.yml" (builtins.toJSON networkConfig);
+  clientNetworkConfig = networkConfig // {
+    nodes = map (
+      node:
+      node
+      // {
+        addresses = lib.filter (address: !(lib.hasPrefix "127.0.0.1" address)) node.addresses;
+      }
+    ) networkConfig.nodes;
+  };
+  clientConfigPath = pkgs.writeText "client.yml" (builtins.toJSON clientNetworkConfig);
   unreachableClientConfigPath = pkgs.writeText "unreachable-client.yml" (
     builtins.toJSON {
       inherit (networkConfig) id networkId;
