@@ -109,7 +109,7 @@ let
       node:
       node
       // {
-        addresses = lib.filter (address: !(lib.hasPrefix "127.0.0.1" address)) node.addresses;
+        addresses = lib.filter (address: !(lib.hasInfix "127.0.0.1" address)) node.addresses;
       }
     ) networkConfig.nodes;
   };
