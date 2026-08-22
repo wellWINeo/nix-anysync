@@ -6,9 +6,11 @@ Preserve configurable Any-Sync service accounts while making every valid user/gr
 
 ## Decision
 
-Custom service identities remain supported. Each module defaults to `any-sync:any-sync`; when callers override either identity, callers own declaration of that custom account or group.
+Custom service identities remain supported. Each module defaults to `any-sync:any-sync`; callers who override a user or group own declaration of that custom account or group.
 
-This decision follows PR #58's requirement to preserve custom service accounts. It supersedes the conflicting `AGENTS.md` statement that all services always run as `any-sync:any-sync`.
+`any-sync` is one shared POSIX user and therefore has one primary group. All simultaneously enabled services that retain the default `any-sync` user must configure the same group. A deployment that needs different primary groups per service must configure distinct custom users and declare those users and groups itself.
+
+This decision follows PR #58's requirement to preserve custom service accounts. It updates the service-identity policy in `AGENTS.md`; that policy now reflects this constraint.
 
 ## Design
 
@@ -18,18 +20,18 @@ This decision follows PR #58's requirement to preserve custom service accounts. 
 
 - Default user + default group: the module creates both `any-sync` user and group.
 - Custom user + default group: the caller creates the custom user; the module creates the default group.
-- Default user + custom group: the module creates the default user in the caller-owned custom group.
-- Custom user + custom group: both identities are caller-owned.
+- Default user + custom group: the module creates the default user in the caller-owned custom group when every simultaneously enabled service using `any-sync` selects that same group.
+- Custom user + custom group: both identities are caller-owned. Use distinct custom users when enabled services require different primary groups.
 
 ### Documentation
 
-Update `AGENTS.md` to state that services default to `any-sync:any-sync` and support caller-owned custom service accounts. This resolves the standards/spec conflict without removing the feature validated by PR #58.
+Update `AGENTS.md` to state that services default to `any-sync:any-sync`, preserve caller-owned custom accounts, and require a shared group for all enabled services using the default user. This documents the POSIX primary-group constraint without removing the custom-account feature validated by PR #58.
 
 ### Regression tests
 
 Extend the NixOS VM test with a second disabled client-side module instance using the default `any-sync` user and a caller-defined custom group. The test asserts that the generated user has that primary group. The existing both-custom assertion remains.
 
-The new assertion is added first and evaluated before the production change, so it demonstrates the faulty mixed-override behavior. Then the implementation changes only the generated-user group assignment.
+The new assertion is added first and evaluated before the production change, so it demonstrates the faulty single-service mixed-override behavior. Then the implementation changes only the generated-user group assignment. It does not establish support for divergent groups across simultaneously enabled services using `any-sync`.
 
 ## Alternatives Rejected
 
