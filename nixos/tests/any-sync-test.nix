@@ -104,15 +104,6 @@ let
       quic = listenOptions (port + 10);
     };
 
-  coordinatorNetworkConfig = networkConfig // {
-    nodes = map (
-      node:
-      if node.peerId == "12D3KooWQ8nLTT4VTWNwZPJ7p9KCiFMLWriVzivKjMt87g5WwvEP" then
-        node // { types = [ ]; }
-      else
-        node
-    ) networkConfig.nodes;
-  };
   clientNetworkConfig = networkConfig // {
     nodes = map (
       node:
@@ -220,89 +211,90 @@ pkgs.testers.nixosTest {
 
       services.any-sync-consensus = {
         enable = true;
-        config =
-          networkConfig
-          // {
-            account = {
-              peerId = "12D3KooWDA4TWKJg2M3sosfTNx2RSaeM7wr4rfcVzpDbtX3sezqP";
-              peerKey = "yqZlxIagQGpW1pt67uda/aTyuw1lbV+cE4eJqMONvsgxnqasNtJhXrAEVKwGe87kladaCYHVrYf/9383fDmJIg==";
-              signingKey = "sg2O8EAvfsPI36RT4uqevZLD1XLG7b3k6O6g7mQMc9Ig8N4vZuiM/8xkhk852dZebLGx7VqEwgCrl4aMCi/whw==";
-            };
-            mongo = {
-              connect = "mongodb://127.0.0.1:27017/?replicaSet=rs0";
-              database = "consensus";
-              logCollection = "log";
-            };
-            networkStorePath = ".";
-          }
-          // getCommonOptions 1106;
+        config = {
+          network = networkConfig;
+        }
+        // {
+          account = {
+            peerId = "12D3KooWDA4TWKJg2M3sosfTNx2RSaeM7wr4rfcVzpDbtX3sezqP";
+            peerKey = "yqZlxIagQGpW1pt67uda/aTyuw1lbV+cE4eJqMONvsgxnqasNtJhXrAEVKwGe87kladaCYHVrYf/9383fDmJIg==";
+            signingKey = "sg2O8EAvfsPI36RT4uqevZLD1XLG7b3k6O6g7mQMc9Ig8N4vZuiM/8xkhk852dZebLGx7VqEwgCrl4aMCi/whw==";
+          };
+          mongo = {
+            connect = "mongodb://127.0.0.1:27017/?replicaSet=rs0";
+            database = "consensus";
+            logCollection = "log";
+          };
+          networkStorePath = ".";
+        }
+        // getCommonOptions 1106;
       };
 
       services.any-sync-coordinator = {
         enable = true;
-        config =
-          {
-            network = coordinatorNetworkConfig;
-          }
-          // {
-            account = {
-              peerId = "12D3KooWQ8nLTT4VTWNwZPJ7p9KCiFMLWriVzivKjMt87g5WwvEP";
-              peerKey = "y6gg83SYkymzrIV1h4fE724rzB0TdHKRCEdbHtJvYo3Uu2XTpkH/Y97IXS1bKleYKe5Hoh/QjMWKIagMr8nY/A==";
-              signingKey = "sg2O8EAvfsPI36RT4uqevZLD1XLG7b3k6O6g7mQMc9Ig8N4vZuiM/8xkhk852dZebLGx7VqEwgCrl4aMCi/whw==";
-            };
-            mongo = {
-              connect = "mongodb://127.0.0.1:27017/?replicaSet=rs0";
-              database = "coordinator";
-              log = "log";
-              spaces = "spaces";
-            };
-            spaceStatus = {
-              runSeconds = 5;
-              deletionPeriodDays = 0;
-            };
-            defaultLimits = {
-              spaceMembersRead = 1000;
-              spaceMembersWrite = 1000;
-              sharedSpacesLimit = 1000;
-            };
-            networkStorePath = ".";
-          }
-          // getCommonOptions 1104;
+        config = {
+          network = networkConfig;
+        }
+        // {
+          account = {
+            peerId = "12D3KooWQ8nLTT4VTWNwZPJ7p9KCiFMLWriVzivKjMt87g5WwvEP";
+            peerKey = "y6gg83SYkymzrIV1h4fE724rzB0TdHKRCEdbHtJvYo3Uu2XTpkH/Y97IXS1bKleYKe5Hoh/QjMWKIagMr8nY/A==";
+            signingKey = "sg2O8EAvfsPI36RT4uqevZLD1XLG7b3k6O6g7mQMc9Ig8N4vZuiM/8xkhk852dZebLGx7VqEwgCrl4aMCi/whw==";
+          };
+          mongo = {
+            connect = "mongodb://127.0.0.1:27017/?replicaSet=rs0";
+            database = "coordinator";
+            log = "log";
+            spaces = "spaces";
+          };
+          spaceStatus = {
+            runSeconds = 5;
+            deletionPeriodDays = 0;
+          };
+          defaultLimits = {
+            spaceMembersRead = 1000;
+            spaceMembersWrite = 1000;
+            sharedSpacesLimit = 1000;
+          };
+          networkStorePath = ".";
+        }
+        // getCommonOptions 1104;
       };
 
       services.any-sync-filenode = {
         enable = true;
-        config =
-          networkConfig
-          // {
-            account = {
-              peerId = "12D3KooWNLZmGeHbWVJsVMmBCwdrsyEdTBj6HydakagT7sRgDBtH";
-              peerKey = "unpzbfaBBAY+HcxyQBCg0AVtGoMyqR4bsMOm1fU/GCa6CMc4xsqWoIydrk1T9OqiEU5UHr4IIXqN95O4X2iA1g==";
-              signingKey = "unpzbfaBBAY+HcxyQBCg0AVtGoMyqR4bsMOm1fU/GCa6CMc4xsqWoIydrk1T9OqiEU5UHr4IIXqN95O4X2iA1g==";
-            };
+        config = {
+          network = networkConfig;
+        }
+        // {
+          account = {
+            peerId = "12D3KooWNLZmGeHbWVJsVMmBCwdrsyEdTBj6HydakagT7sRgDBtH";
+            peerKey = "unpzbfaBBAY+HcxyQBCg0AVtGoMyqR4bsMOm1fU/GCa6CMc4xsqWoIydrk1T9OqiEU5UHr4IIXqN95O4X2iA1g==";
+            signingKey = "unpzbfaBBAY+HcxyQBCg0AVtGoMyqR4bsMOm1fU/GCa6CMc4xsqWoIydrk1T9OqiEU5UHr4IIXqN95O4X2iA1g==";
+          };
 
-            s3Store = {
-              bucket = "minio-bucket";
-              indexBucket = "minio-bucket";
-              maxThreads = 16;
-              profile = "default";
-              region = "us-east-1";
-              endpoint = "http://127.0.0.1:9000";
-              forcePathStyle = true;
-              credentials = {
-                accessKey = "minioAccess";
-                secretKey = "minioSecret";
-              };
+          s3Store = {
+            bucket = "minio-bucket";
+            indexBucket = "minio-bucket";
+            maxThreads = 16;
+            profile = "default";
+            region = "us-east-1";
+            endpoint = "http://127.0.0.1:9000";
+            forcePathStyle = true;
+            credentials = {
+              accessKey = "minioAccess";
+              secretKey = "minioSecret";
             };
+          };
 
-            redis = {
-              isCluster = false;
-              url = "redis://127.0.0.1:6379?dial_timeout=3&read_timeout=6s";
-            };
+          redis = {
+            isCluster = false;
+            url = "redis://127.0.0.1:6379?dial_timeout=3&read_timeout=6s";
+          };
 
-            networkStorePath = ".";
-          }
-          // getCommonOptions 1105;
+          networkStorePath = ".";
+        }
+        // getCommonOptions 1105;
       };
 
       services.any-sync-node = {
@@ -310,27 +302,28 @@ pkgs.testers.nixosTest {
         replicas =
           lib.imap1
             (i: opts: {
-              config =
-                networkConfig
-                // {
-                  account = {
-                    peerId = opts.peerId;
-                    peerKey = opts.peerKey;
-                    signingKey = opts.signingKey;
-                  };
-                  apiServer.listenAddr = "0.0.0.0:808${toString i}";
-                  space = {
-                    gcTTL = 60;
-                    syncPeriod = 600;
-                  };
-                  nodeSync = {
-                    periodicSyncHours = 2;
-                    syncOnStart = true;
-                  };
+              config = {
+                network = networkConfig;
+              }
+              // {
+                account = {
+                  peerId = opts.peerId;
+                  peerKey = opts.peerKey;
+                  signingKey = opts.signingKey;
+                };
+                apiServer.listenAddr = "0.0.0.0:808${toString i}";
+                space = {
+                  gcTTL = 60;
+                  syncPeriod = 600;
+                };
+                nodeSync = {
+                  periodicSyncHours = 2;
+                  syncOnStart = true;
+                };
 
-                  networkStorePath = ".";
-                }
-                // getCommonOptions opts.port;
+                networkStorePath = ".";
+              }
+              // getCommonOptions opts.port;
             })
             [
               {
@@ -441,6 +434,10 @@ pkgs.testers.nixosTest {
     # consesus
     server.wait_for_open_port(1106);  # tcp yamux
     server.wait_until_succeeds("ss -unl | grep -q :1116")  # quic
+
+    # Every daemon schema nests node configuration below `network`; otherwise its
+    # secure service has no configured peer types and sends SkipVerify credentials.
+    server.succeed("for service in any-sync-consensus any-sync-coordinator any-sync-filenode any-sync-node-{1,2,3}; do config=$(systemctl show --property=ExecStart --value $service.service | sed -n 's|.* -c \\([^ ;]*\\).*|\\1|p'); test -n \"$config\"; grep -q '\"network\":{\"id\":\"6820862ae79bd90018ae22d0\"' \"$config\"; done")
 
     server.succeed("systemctl show -p After any-sync-filenode.service | grep -q 'redis-anysync-files.service'")
     server.succeed("systemctl show -p After any-sync-filenode.service | grep -q 'minio.service'")
