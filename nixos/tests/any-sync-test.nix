@@ -241,7 +241,9 @@ pkgs.testers.nixosTest {
       services.any-sync-coordinator = {
         enable = true;
         config =
-          coordinatorNetworkConfig
+          {
+            network = coordinatorNetworkConfig;
+          }
           // {
             account = {
               peerId = "12D3KooWQ8nLTT4VTWNwZPJ7p9KCiFMLWriVzivKjMt87g5WwvEP";
