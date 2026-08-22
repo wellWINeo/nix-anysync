@@ -79,7 +79,7 @@ When updating a package version, follow the 4-step process in `docs/update-pkg.m
 4. Test the build
 
 ### NixOS Modules (`nixos/modules/any-sync/*.nix`)
-- All services run as `any-sync:any-sync` user/group
+- Services default to `any-sync:any-sync`; caller-provided custom `user` and/or `group` accounts are preserved and must be declared by the caller.
 - Systemd hardening: PrivateTmp, ProtectSystem=full, NoNewPrivileges, LimitNOFILE=65536
 - Config via `config` attribute (inline) or `configPath` (external file)
 - `any-sync-node` supports multiple replicas via list config

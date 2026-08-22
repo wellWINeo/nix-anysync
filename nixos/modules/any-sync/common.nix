@@ -6,7 +6,7 @@ with lib;
   addUserAndGroup = cfg: defaultUser: defaultGroup: {
     users.users.${defaultUser} = mkIf (cfg.user == defaultUser) {
       isSystemUser = true;
-      group = defaultGroup;
+      group = cfg.group;
       createHome = false;
     };
 

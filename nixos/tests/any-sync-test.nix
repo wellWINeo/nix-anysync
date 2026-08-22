@@ -355,8 +355,12 @@ pkgs.testers.nixosTest {
     };
 
     client = {
-      imports = [ nixosModules.any-sync-consensus ];
+      imports = [
+        nixosModules.any-sync-consensus
+        nixosModules.any-sync-coordinator
+      ];
       users.groups.any-sync-test = { };
+      users.groups.any-sync-mixed = { };
       users.users.any-sync-test = {
         isNormalUser = true;
         group = "any-sync-test";
@@ -367,7 +371,13 @@ pkgs.testers.nixosTest {
         group = "any-sync-test";
         config = { };
       };
+      services.any-sync-coordinator = {
+        enable = true;
+        group = "any-sync-mixed";
+        config = { };
+      };
       systemd.services.any-sync-consensus.wantedBy = lib.mkForce [ ];
+      systemd.services.any-sync-coordinator.wantedBy = lib.mkForce [ ];
 
       networking = {
         useDHCP = false;
@@ -407,6 +417,9 @@ pkgs.testers.nixosTest {
     client.succeed("getent passwd any-sync-test | grep -q '/home/any-sync-test'")
     client.succeed("systemctl show --property=User --value any-sync-consensus.service | grep -qx any-sync-test")
     client.succeed("systemctl show --property=Group --value any-sync-consensus.service | grep -qx any-sync-test")
+    client.succeed("id -gn any-sync | grep -qx any-sync-mixed")
+    client.succeed("systemctl show --property=User --value any-sync-coordinator.service | grep -qx any-sync")
+    client.succeed("systemctl show --property=Group --value any-sync-coordinator.service | grep -qx any-sync-mixed")
 
     # Wait for services to be up
     server.wait_for_unit("any-sync-consensus.service");
