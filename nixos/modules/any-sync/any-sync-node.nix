@@ -15,18 +15,16 @@ let
   getConfigPath =
     i:
     let
-      r = elemAt cfg.replicas (i - 1);
+      replica = elemAt cfg.replicas (i - 1);
       stateDir = "/var/lib/any-sync/node-${toString i}";
-      r_mod = recursiveUpdate r {
-        config = {
-          storage = {
-            path = stateDir + "/storage";
-            anyStorePath = stateDir + "/anyStorage";
-          };
+      replicaWithStorageDefaults = recursiveUpdate {
+        config.storage = {
+          path = stateDir + "/storage";
+          anyStorePath = stateDir + "/anyStorage";
         };
-      };
+      } replica;
     in
-    common.getConfigPath r_mod "any-sync-node-${toString i}";
+    common.getConfigPath replicaWithStorageDefaults "any-sync-node-${toString i}";
 
   common = import ./common.nix {
     inherit pkgs;
@@ -78,17 +76,7 @@ in
           assertion = lists.all (cfg: cfg.config != null || cfg.configPath != null) cfg.replicas;
           message = "One of any-sync-node replica hasn't config or configPath";
         }
-      ]
-      ++ (imap1 (i: r: {
-        assertion = !(r.config != null && (r.config ? storage));
-        message = ''
-          Storage configuration in replica ${toString i} will be overridden by systemd StateDirectory defaults.
-          Storage path and anyStorePath are automatically set to:
-            path: /var/lib/any-sync/node-${toString i}/storage
-            anyStorePath: /var/lib/any-sync/node-${toString i}/anyStorage
-          To use custom storage paths, provide a configPath to your own yaml file instead of inline config.
-        '';
-      }) cfg.replicas);
+      ];
 
       # create systemd service unit for each replica
       systemd.services = listToAttrs (

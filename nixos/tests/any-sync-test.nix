@@ -126,6 +126,37 @@ let
       ];
     }
   );
+  mixedResultClientConfigPath = pkgs.writeText "mixed-result-client.yml" (
+    builtins.toJSON {
+      inherit (networkConfig) id networkId;
+      nodes = [
+        {
+          addresses = [
+            "127.0.0.1:1"
+            "192.168.0.1:1104"
+          ];
+          peerId = "12D3KooWQ8nLTT4VTWNwZPJ7p9KCiFMLWriVzivKjMt87g5WwvEP";
+          types = [ "coordinator" ];
+        }
+      ];
+    }
+  );
+  nonCoordinatorClientConfigPath =
+    name: address:
+    pkgs.writeText name (
+      builtins.toJSON {
+        inherit (networkConfig) id networkId;
+        nodes = [
+          {
+            addresses = [ address ];
+            peerId = "12D3KooWQFamdVnYhGqda7un21XtQcZu8fPnmU5ARgDvuJiRGgNq";
+            types = [ "coordinator" ];
+          }
+        ];
+      }
+    );
+  nonCoordinatorYamuxClientConfigPath = nonCoordinatorClientConfigPath "non-coordinator-yamux-client.yml" "192.168.0.1:1101";
+  nonCoordinatorQuicClientConfigPath = nonCoordinatorClientConfigPath "non-coordinator-quic-client.yml" "quic://192.168.0.1:1111";
 in
 pkgs.testers.nixosTest {
 
@@ -180,6 +211,7 @@ pkgs.testers.nixosTest {
           rs.initiate({_id: "rs0", members: [{_id: 0, host: "127.0.0.1:27017"}]});
         '';
       };
+      systemd.services.mongodb.wantedBy = lib.mkForce [ ];
 
       # Needs to load bloom filter module
       services.redis.package = pkgs.valkey.overrideAttrs (oldAttrs: {
@@ -199,6 +231,7 @@ pkgs.testers.nixosTest {
         Type = lib.mkForce "simple";
         WorkingDirectory = "/var/lib/redis-anysync-files";
       };
+      systemd.services.redis-anysync-files.wantedBy = lib.mkForce [ ];
 
       services.minio = {
         enable = true;
@@ -208,6 +241,7 @@ pkgs.testers.nixosTest {
           MINIO_ROOT_PASSWORD=minioSecret
         '';
       };
+      systemd.services.minio.wantedBy = lib.mkForce [ ];
 
       services.any-sync-consensus = {
         enable = true;
@@ -323,7 +357,8 @@ pkgs.testers.nixosTest {
 
                 networkStorePath = ".";
               }
-              // getCommonOptions opts.port;
+              // getCommonOptions opts.port
+              // (opts.extraConfig or { });
             })
             [
               {
@@ -337,12 +372,14 @@ pkgs.testers.nixosTest {
                 peerKey = "NlqXQj7RyEd/SlW3q3V9mfwYnrMHadxGIfbvf7UtdEo1kzxtMUAMfP/wWxP/4gqiwCNrVdgii5sUku5GbwWyRA==";
                 signingKey = "NlqXQj7RyEd/SlW3q3V9mfwYnrMHadxGIfbvf7UtdEo1kzxtMUAMfP/wWxP/4gqiwCNrVdgii5sUku5GbwWyRA==";
                 port = 1102;
+                extraConfig.storage.path = "/var/lib/any-sync/node-2/custom-storage";
               }
               {
                 peerId = "12D3KooWKhZoPy68FJAcmnm6YjetxvAfndgfcrqgcyq7NCnEJ3Zn";
                 peerKey = "pgOqz9EL+eVvKn/V54Bg7xfcUkRF0D3HgM3eJEL7kw2S1vS0GtqMWlp/zYd6YIq+Do6EWGBapzGy68VQUd3EjQ==";
                 signingKey = "pgOqz9EL+eVvKn/V54Bg7xfcUkRF0D3HgM3eJEL7kw2S1vS0GtqMWlp/zYd6YIq+Do6EWGBapzGy68VQUd3EjQ==";
                 port = 1103;
+                extraConfig.storage.anyStorePath = "/var/lib/any-sync/node-3/custom-anyStorage";
               }
             ];
       };
@@ -358,9 +395,14 @@ pkgs.testers.nixosTest {
       imports = [
         nixosModules.any-sync-consensus
         nixosModules.any-sync-coordinator
+        nixosModules.any-sync-filenode
       ];
       users.groups.any-sync-test = { };
       users.groups.any-sync-mixed = { };
+      users.users.any-sync-default-group-test = {
+        isNormalUser = true;
+        group = "any-sync";
+      };
       users.users.any-sync-test = {
         isNormalUser = true;
         group = "any-sync-test";
@@ -376,8 +418,14 @@ pkgs.testers.nixosTest {
         group = "any-sync-mixed";
         config = { };
       };
+      services.any-sync-filenode = {
+        enable = true;
+        user = "any-sync-default-group-test";
+        config = { };
+      };
       systemd.services.any-sync-consensus.wantedBy = lib.mkForce [ ];
       systemd.services.any-sync-coordinator.wantedBy = lib.mkForce [ ];
+      systemd.services.any-sync-filenode.wantedBy = lib.mkForce [ ];
 
       networking = {
         useDHCP = false;
@@ -394,7 +442,27 @@ pkgs.testers.nixosTest {
   };
 
   testScript = ''
+    def assert_unit_relation(property_name, unit, dependency):
+        relations = server.succeed(
+            f"systemctl show --property={property_name} --value {unit}"
+        ).split()
+        assert dependency in relations, (
+            f"{dependency} missing from {property_name} for {unit}: {relations}"
+        )
+
     start_all()
+
+    multi_user_wants = server.succeed(
+        "systemctl show --property=Wants --value multi-user.target"
+    ).split()
+    for backend in (
+        "mongodb.service",
+        "redis-anysync-files.service",
+        "minio.service",
+    ):
+        assert backend not in multi_user_wants, (
+            f"{backend} unexpectedly wanted directly by multi-user.target"
+        )
 
     # Wait for MongoDB to be ready with replica set
     server.wait_for_unit("mongodb.service");
@@ -414,12 +482,18 @@ pkgs.testers.nixosTest {
 
     client.copy_from_host("${clientConfigPath}", "/tmp/any-sync-client.yml")
     client.copy_from_host("${unreachableClientConfigPath}", "/tmp/unreachable-client.yml")
+    client.copy_from_host("${mixedResultClientConfigPath}", "/tmp/mixed-result-client.yml")
+    client.copy_from_host("${nonCoordinatorYamuxClientConfigPath}", "/tmp/non-coordinator-yamux-client.yml")
+    client.copy_from_host("${nonCoordinatorQuicClientConfigPath}", "/tmp/non-coordinator-quic-client.yml")
     client.succeed("getent passwd any-sync-test | grep -q '/home/any-sync-test'")
     client.succeed("systemctl show --property=User --value any-sync-consensus.service | grep -qx any-sync-test")
     client.succeed("systemctl show --property=Group --value any-sync-consensus.service | grep -qx any-sync-test")
     client.succeed("id -gn any-sync | grep -qx any-sync-mixed")
     client.succeed("systemctl show --property=User --value any-sync-coordinator.service | grep -qx any-sync")
     client.succeed("systemctl show --property=Group --value any-sync-coordinator.service | grep -qx any-sync-mixed")
+    client.succeed("id -gn any-sync-default-group-test | grep -qx any-sync")
+    client.succeed("systemctl show --property=User --value any-sync-filenode.service | grep -qx any-sync-default-group-test")
+    client.succeed("systemctl show --property=Group --value any-sync-filenode.service | grep -qx any-sync")
 
     # Wait for services to be up
     server.wait_for_unit("any-sync-consensus.service");
@@ -452,11 +526,70 @@ pkgs.testers.nixosTest {
     # secure service has no configured peer types and sends SkipVerify credentials.
     server.succeed("for service in any-sync-consensus any-sync-coordinator any-sync-filenode any-sync-node-{1,2,3}; do config=$(systemctl show --property=ExecStart --value $service.service | sed -n 's|.* -c \\([^ ;]*\\).*|\\1|p'); test -n \"$config\"; grep -q '\"network\":{\"id\":\"6820862ae79bd90018ae22d0\"' \"$config\"; done")
 
-    server.succeed("systemctl show -p After any-sync-filenode.service | grep -q 'redis-anysync-files.service'")
-    server.succeed("systemctl show -p After any-sync-filenode.service | grep -q 'minio.service'")
-    server.succeed("systemctl show -p After any-sync-node-1.service | grep -q 'any-sync-filenode.service'")
+    server.succeed(
+        """
+        check_storage() {
+          service=\"$1\"
+          expected_path=\"$2\"
+          expected_any_store_path=\"$3\"
+          config=$(systemctl show --property=ExecStart --value \"$service\" | sed -n 's|.* -c \\([^ ;]*\\).*|\\1|p')
+          test -n \"$config\"
+          grep -Fq '\"path\":\"'\"$expected_path\"'\"' \"$config\"
+          grep -Fq '\"anyStorePath\":\"'\"$expected_any_store_path\"'\"' \"$config\"
+        }
+
+        check_storage any-sync-node-1.service \\
+          /var/lib/any-sync/node-1/storage \\
+          /var/lib/any-sync/node-1/anyStorage
+        check_storage any-sync-node-2.service \\
+          /var/lib/any-sync/node-2/custom-storage \\
+          /var/lib/any-sync/node-2/anyStorage
+        check_storage any-sync-node-3.service \\
+          /var/lib/any-sync/node-3/storage \\
+          /var/lib/any-sync/node-3/custom-anyStorage
+        """
+    )
+
+    dependency_edges = [
+        ("any-sync-consensus.service", "mongodb.service"),
+        ("any-sync-coordinator.service", "mongodb.service"),
+        ("any-sync-coordinator.service", "any-sync-consensus.service"),
+        ("any-sync-filenode.service", "redis-anysync-files.service"),
+        ("any-sync-filenode.service", "minio.service"),
+        ("any-sync-filenode.service", "any-sync-consensus.service"),
+        ("any-sync-filenode.service", "any-sync-coordinator.service"),
+    ]
+    for replica in range(1, 4):
+        for dependency in (
+            "any-sync-filenode.service",
+            "any-sync-consensus.service",
+            "any-sync-coordinator.service",
+        ):
+            dependency_edges.append((f"any-sync-node-{replica}.service", dependency))
+
+    for unit, dependency in dependency_edges:
+        assert_unit_relation("After", unit, dependency)
+        assert_unit_relation("Wants", unit, dependency)
     server.succeed("for dir in consensus coordinator file-node node-1 node-2 node-3; do su -s /bin/sh any-sync -c \"test -w /var/lib/any-sync/$dir\"; done")
     client.fail("any-sync-netcheck -c /tmp/unreachable-client.yml")
+    mixed_status, mixed_output = client.execute(
+        "any-sync-netcheck -c /tmp/mixed-result-client.yml 2>&1"
+    )
+    assert mixed_status == 1, mixed_output
+    assert "success" in mixed_output, mixed_output
+    assert '"addr": "192.168.0.1:1104"' in mixed_output, mixed_output
+
+    for config_path, expected_address in (
+        ("/tmp/non-coordinator-yamux-client.yml", "192.168.0.1:1101"),
+        ("/tmp/non-coordinator-quic-client.yml", "192.168.0.1:1111"),
+    ):
+        status, output = client.execute(
+            f"timeout 20s any-sync-netcheck -c {config_path} 2>&1"
+        )
+        assert status == 1, output
+        assert "configuration request error" in output, output
+        assert f'"addr": "{expected_address}"' in output, output
+
     client.succeed("any-sync-netcheck -c /tmp/any-sync-client.yml");
   '';
 }
