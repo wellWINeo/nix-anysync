@@ -6,7 +6,7 @@
   };
 
   outputs =
-    { nixpkgs, ... }:
+    { self, nixpkgs, ... }:
     let
       # System types to support.
       supportedSystems = [
@@ -73,7 +73,7 @@
         {
           any-sync-test = pkgs.callPackage ./nixos/tests/any-sync-test.nix {
             inherit pkgs;
-            modules = localModules;
+            nixosModules = localModules;
           };
         }
       );

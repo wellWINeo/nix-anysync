@@ -1,0 +1,134 @@
+--- a/any-sync-netcheck/netcheck.go
++++ b/any-sync-netcheck/netcheck.go
+@@ -108,21 +108,23 @@
+ 		panic(err)
+ 	}
+ 
++	failed := len(checkAddrs) == 0
+ 	for _, addr := range checkAddrs {
+ 		addr = strings.TrimSpace(addr)
+ 		switch {
+ 		case strings.HasPrefix(addr, "yamux://"):
+-			probeYamux(a, addr[8:])
++			if !probeYamux(a, addr[8:]) { failed = true }
+ 		case strings.HasPrefix(addr, "quic://"):
+-			probeQuic(a, addr[7:])
++			if !probeQuic(a, addr[7:]) { failed = true }
+ 		default:
+ 			log.Warn("unexpected address scheme", zap.String("addr", addr))
++			failed = true
+ 		}
+ 	}
++	if failed { os.Exit(1) }
+ }
+ 
+-
+-func probeYamux(a *app.App, addr string) {
++func probeYamux(a *app.App, addr string) bool {
+ 	ss := a.MustComponent(secureservice.CName).(secureservice.SecureService)
+ 	l := log.With(zap.String("addr", addr))
+ 
+@@ -131,7 +133,7 @@
+ 	conn, err := net.DialTimeout("tcp", addr, time.Second*60)
+ 	if err != nil {
+ 		l.Warn("open TCP conn error", zap.Error(err), zap.Duration("dur", time.Since(st)))
+-		return
++		return false
+ 	} else {
+ 		l.Debug("TCP conn established", zap.Duration("dur", time.Since(st)))
+ 		l = l.With(zap.String("ip", conn.RemoteAddr().String()))
+@@ -143,7 +145,7 @@
+ 	cctx, err := ss.SecureOutbound(ctx, conn)
+ 	if err != nil {
+ 		l.Warn("handshake error", zap.Error(err), zap.Duration("dur", time.Since(hst)))
+-		return
++		return false
+ 	} else {
+ 		l.Debug("handshake success", zap.Duration("dur", time.Since(hst)), zap.Duration("total", time.Since(st)))
+ 	}
+@@ -153,7 +155,7 @@
+ 	sess, err := yamux2.Client(conn, yamux2.DefaultConfig())
+ 	if err != nil {
+ 		l.Warn("yamux session error", zap.Error(err), zap.Duration("dur", time.Since(yst)))
+-		return
++		return false
+ 	} else {
+ 		l.Debug("yamux session success", zap.Duration("dur", time.Since(yst)), zap.Duration("total", time.Since(st)))
+ 	}
+@@ -164,7 +166,7 @@
+ 	sc, err := mc.Open(ctx)
+ 	if err != nil {
+ 		l.Warn("open sub connection error", zap.Error(err), zap.Duration("dur", time.Since(scst)))
+-		return
++		return false
+ 	} else {
+ 		l.Debug("open sub conn success", zap.Duration("dur", time.Since(scst)), zap.Duration("total", time.Since(st)))
+ 		defer sc.Close()
+@@ -177,7 +179,7 @@
+ 		Encodings: []handshakeproto.Encoding{handshakeproto.Encoding_None},
+ 	}); err != nil {
+ 		l.Warn("proto handshake error", zap.Duration("dur", time.Since(phst)), zap.Error(err))
+-		return
++		return false
+ 	} else {
+ 		l.Debug("proto handshake success", zap.Duration("dur", time.Since(phst)), zap.Duration("total", time.Since(st)))
+ 	}
+@@ -187,14 +189,15 @@
+ 	resp, err := coordinatorproto.NewDRPCCoordinatorClient(drpcconn.New(sc)).NetworkConfiguration(ctx, &coordinatorproto.NetworkConfigurationRequest{})
+ 	if err != nil {
+ 		l.Warn("configuration request error", zap.Error(err), zap.Duration("dur", time.Since(rst)))
+-		return
++		return false
+ 	} else {
+ 		l.Debug("configuration request success", zap.Duration("dur", time.Since(rst)), zap.Duration("total", time.Since(st)), zap.String("nid", resp.GetNetworkId()))
+ 	}
+ 	l.Info("success", zap.Duration("dur", time.Since(st)))
++	return true
+ }
+ 
+-func probeQuic(a *app.App, addr string) {
++func probeQuic(a *app.App, addr string) bool {
+ 	qs := a.MustComponent(quic.CName).(quic.Quic)
+ 	l := log.With(zap.String("addr", addr))
+ 
+@@ -203,7 +206,7 @@
+ 	mc, err := qs.Dial(ctx, addr)
+ 	if err != nil {
+ 		l.Warn("open QUIC conn error", zap.Error(err), zap.Duration("dur", time.Since(st)))
+-		return
++		return false
+ 	} else {
+ 		l.Debug("QUIC conn established", zap.Duration("dur", time.Since(st)))
+ 		l = l.With(zap.String("ip", mc.Addr()))
+@@ -215,7 +218,7 @@
+ 	sc, err := mc.Open(ctx)
+ 	if err != nil {
+ 		l.Warn("open sub connection error", zap.Error(err), zap.Duration("dur", time.Since(scst)))
+-		return
++		return false
+ 	} else {
+ 		l.Debug("open sub conn success", zap.Duration("dur", time.Since(scst)), zap.Duration("total", time.Since(st)))
+ 		defer sc.Close()
+@@ -228,7 +231,7 @@
+ 		Encodings: []handshakeproto.Encoding{handshakeproto.Encoding_None},
+ 	}); err != nil {
+ 		l.Warn("proto handshake error", zap.Duration("dur", time.Since(phst)), zap.Error(err))
+-		return
++		return false
+ 	} else {
+ 		l.Debug("proto handshake success", zap.Duration("dur", time.Since(phst)), zap.Duration("total", time.Since(st)))
+ 	}
+@@ -238,11 +241,12 @@
+ 	resp, err := coordinatorproto.NewDRPCCoordinatorClient(drpcconn.New(sc)).NetworkConfiguration(ctx, &coordinatorproto.NetworkConfigurationRequest{})
+ 	if err != nil {
+ 		l.Warn("configuration request error", zap.Error(err), zap.Duration("dur", time.Since(rst)))
+-		return
++		return false
+ 	} else {
+ 		l.Debug("configuration request success", zap.Duration("dur", time.Since(rst)), zap.Duration("total", time.Since(st)), zap.String("nid", resp.GetNetworkId()))
+ 	}
+ 	l.Info("success", zap.Duration("dur", time.Since(st)))
++	return true
+ }
+ 
+ func bootstrap(a *app.App) {

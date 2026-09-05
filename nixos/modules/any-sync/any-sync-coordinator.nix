@@ -44,19 +44,37 @@ in
     }
     // (common.userGroupOptions user group);
 
-  config =
-    mkIf cfg.enable {
+  config = mkIf cfg.enable (
+    {
       assertions = [ (common.assertConfig cfg) ];
 
       systemd.services.any-sync-coordinator = {
+        after = [
+          "network.target"
+          "mongodb.service"
+          "any-sync-consensus.service"
+        ];
+        wants = [
+          "mongodb.service"
+          "any-sync-consensus.service"
+        ];
+        wantedBy = [ "multi-user.target" ];
+
+        path = [ pkgs.any-sync-coordinator ];
+
+        unitConfig = {
+          StartLimitBurst = 3;
+          StartLimitIntervalSec = 60;
+        };
+
         serviceConfig = {
           ExecStart = "${pkgs.any-sync-coordinator}/bin/any-sync-coordinator -c ${configPath}";
-          User = user;
-          Group = group;
+          User = cfg.user;
+          Group = cfg.group;
           Restart = "on-failure";
-          RestartSec = "5s";
-          StateDirectory = "any-sync";
-          WorkingDirectory = "/var/lib/any-sync";
+          RestartSec = "15s";
+          StateDirectory = "any-sync/coordinator";
+          WorkingDirectory = "/var/lib/any-sync/coordinator";
           PrivateTmp = true;
           ProtectSystem = "full";
           NoNewPrivileges = true;
@@ -64,5 +82,6 @@ in
         };
       };
     }
-    // (common.addUserAndGroup cfg user group);
+    // (common.addUserAndGroup cfg user group)
+  );
 }
