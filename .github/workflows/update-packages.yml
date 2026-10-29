@@ -1,0 +1,77 @@
+name: Update Any-Sync packages
+
+on:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    name: Update ${{ matrix.package }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - any-sync-consensus
+          - any-sync-coordinator
+          - any-sync-filenode
+          - any-sync-node
+          - any-sync-tools
+    concurrency:
+      group: update-${{ matrix.package }}
+      cancel-in-progress: false
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+
+      - name: Update package
+        id: update
+        env:
+          PACKAGE: ${{ matrix.package }}
+        run: bash scripts/update-package.sh "$PACKAGE"
+
+      - name: Create GitHub App token
+        if: steps.update.outputs.changed == 'true'
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.PACKAGE_UPDATE_APP_ID }}
+          private-key: ${{ secrets.PACKAGE_UPDATE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Validate commit author
+        if: steps.update.outputs.changed == 'true'
+        env:
+          AUTHOR_NAME: ${{ vars.PACKAGE_UPDATE_AUTHOR_NAME }}
+          AUTHOR_EMAIL: ${{ vars.PACKAGE_UPDATE_AUTHOR_EMAIL }}
+        run: |
+          if [[ -z "$AUTHOR_NAME" || -z "$AUTHOR_EMAIL" ]]; then
+            echo '::error::Set PACKAGE_UPDATE_AUTHOR_NAME and PACKAGE_UPDATE_AUTHOR_EMAIL repository variables.'
+            exit 1
+          fi
+
+      - name: Create pull request
+        if: steps.update.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          author: ${{ vars.PACKAGE_UPDATE_AUTHOR_NAME }} <${{ vars.PACKAGE_UPDATE_AUTHOR_EMAIL }}>
+          committer: ${{ vars.PACKAGE_UPDATE_AUTHOR_NAME }} <${{ vars.PACKAGE_UPDATE_AUTHOR_EMAIL }}>
+          branch: automation/update-${{ matrix.package }}
+          commit-message: "Update ${{ matrix.package }}"
+          title: "Update ${{ matrix.package }}"
+          body: |
+            Update `${{ matrix.package }}` to the latest eligible upstream release.
+
+            Review the changes and PR checks before merging.
+          add-paths: pkgs/any-sync/${{ matrix.package }}.nix

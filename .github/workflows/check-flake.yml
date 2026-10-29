@@ -16,6 +16,9 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4.2.2
 
+      - name: Test package update helper
+        run: python3 -m unittest discover -s tests -v
+
       - name: Install Nix
         uses: cachix/install-nix-action@v31
 
