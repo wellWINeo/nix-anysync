@@ -13,7 +13,6 @@ Flake to natively self-host any-sync infrastructure
 
 ## CI/CD
 
-- Pull requests and pushes to `main` evaluate all supported flake systems with `nix flake check --no-build --all-systems`; package builds and integration tests are not run by this job yet.
-- Five GitHub Actions workflows run daily to check for upstream releases.
-- New releases trigger issue creation with label `dependency-update`.
+- Pull requests and pushes to `main` evaluate all supported flake systems and run the NixOS VM integration test.
+- A daily workflow updates the five Any-Sync packages and opens one pull request per changed package. See [package maintenance](docs/update-pkg.md) for GitHub App setup and failure investigation.
 - Binary cache uploads go to S3 on Yandex Cloud (see Makefile).
