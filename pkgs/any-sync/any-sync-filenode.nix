@@ -10,7 +10,7 @@
 ###
 
 let
-  version = "0.11.1";
+  version = "0.13.2";
   maintainers = import ../../maintainers/maintainer-list.nix;
 in
 pkgs.buildGoModule {
@@ -24,10 +24,10 @@ pkgs.buildGoModule {
     owner = "anyproto";
     repo = "any-sync-filenode";
     tag = "v${version}";
-    sha256 = "sha256-75xuFga0+XmNIbGkW6xrNuIznvV+Fg/UhrVn97pXXVE=";
+    sha256 = "sha256-WbQ67BFL3/AHwCEUvLJiL/kNrmQ4t8/slIYhSUh3RRY=";
   };
 
-  vendorHash = "sha256-u8AxFJu2xofLnQLnIEQ8Sp2vZrtE3dXRz/qF4Rn8cWg=";
+  vendorHash = "sha256-CG6YWktUsOD4q+j/zVYzosOwQXqZNJnHCcCi016NZyk=";
 
   postInstall = ''
     mv $out/bin/cmd $out/bin/any-sync-filenode
