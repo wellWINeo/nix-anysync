@@ -1,11 +1,16 @@
 # Any-Sync package maintenance
 
 The `Update Any-Sync packages` workflow runs daily and can also be started with
-`workflow_dispatch`. Each of the five packages is updated independently with
-`nix-update` from the flake's pinned nixpkgs. A changed package gets its own
-`automation/update-<package>` branch and pull request; no change creates no PR.
-The GitHub App token makes the existing PR evaluation and NixOS VM checks run
-without manual workflow approval. Review and merge PRs manually.
+`workflow_dispatch`. The five packages are updated together with `nix-update`
+from the flake's pinned nixpkgs. If all updates succeed, changes are proposed
+in one stack PR; no changes create no PR. If any update fails, no partial batch
+is pushed and the job fails with the package name in its logs.
+
+An existing stack PR is refreshed by merging the default branch and appending
+new commits; it is never force-pushed. Merge conflicts or concurrent pushes
+fail the job for manual investigation. The GitHub App token makes the existing
+PR evaluation and NixOS VM checks run without manual workflow approval. Review
+and merge PRs manually.
 
 A failed update job leaves its package name and error in the Actions run. A
 failure after the PR is opened appears in that PR's checks. The project skill

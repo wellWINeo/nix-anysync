@@ -14,5 +14,5 @@ Flake to natively self-host any-sync infrastructure
 ## CI/CD
 
 - Pull requests and pushes to `main` evaluate all supported flake systems and run the NixOS VM integration test.
-- A daily workflow updates the five Any-Sync packages and opens one pull request per changed package. See [package maintenance](docs/update-pkg.md) for GitHub App setup and failure investigation.
+- A daily workflow updates the five Any-Sync packages together in one pull request. See [package maintenance](docs/update-pkg.md) for failure investigation.
 - Binary cache uploads go to S3 on Yandex Cloud (see Makefile).
