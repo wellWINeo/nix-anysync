@@ -11,8 +11,8 @@ Flake to natively self-host any-sync infrastructure
 - [ ] add "HOWTO"
 - [ ] merge into NixOS/nixpkgs
 
-## CI/CD
+## CI/CD and binary cache
 
-- Pull requests and pushes to `main` evaluate all supported flake systems and run the NixOS VM integration test.
+- Pull requests and pushes to `main` evaluate supported flake systems and run the NixOS VM integration test.
 - A daily workflow updates the five Any-Sync packages together in one pull request. See [package maintenance](docs/update-pkg.md) for failure investigation.
-- Binary cache uploads go to S3 on Yandex Cloud (see Makefile).
+- Trusted `main` workflows publish signed package and reusable Linux VM inputs to an operator-provisioned AWS S3 cache; weekly retention is dry-run unless explicitly enabled. See [AWS binary cache operations and client setup](docs/binary-cache.md) before provisioning or consuming it.

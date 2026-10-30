@@ -16,8 +16,46 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4.2.2
 
+      - name: Configure public binary cache
+        id: cache-config
+        shell: bash
+        env:
+          NIX_CACHE_URL: ${{ vars.NIX_CACHE_URL }}
+          NIX_CACHE_PUBLIC_KEY: ${{ vars.NIX_CACHE_PUBLIC_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$NIX_CACHE_URL" && -z "$NIX_CACHE_PUBLIC_KEY" ]]; then
+            cache_url=""
+            cache_key=""
+          elif [[ -z "$NIX_CACHE_URL" || -z "$NIX_CACHE_PUBLIC_KEY" ]]; then
+            echo "::error::Configure both NIX_CACHE_URL and NIX_CACHE_PUBLIC_KEY, or leave both unset"
+            exit 1
+          else
+            if [[ "$NIX_CACHE_URL" == *$'\n'* || "$NIX_CACHE_PUBLIC_KEY" == *$'\n'* ]]; then
+              echo "::error::Nix cache URL and public key must each be a single line"
+              exit 1
+            fi
+            cache_url="$NIX_CACHE_URL"
+            cache_key="$NIX_CACHE_PUBLIC_KEY"
+          fi
+
+          {
+            echo "extra_nix_config<<NIX_CONFIG_EOF"
+            if [[ -n "$cache_url" ]]; then
+              echo "substituters = https://cache.nixos.org $cache_url"
+              echo "trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= $cache_key"
+            else
+              echo "substituters = https://cache.nixos.org"
+              echo "trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+            fi
+            echo "NIX_CONFIG_EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Install Nix
         uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: ${{ steps.cache-config.outputs.extra_nix_config }}
 
       - name: Verify KVM availability
         shell: bash
