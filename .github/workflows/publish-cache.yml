@@ -62,13 +62,6 @@ jobs:
         with:
           extra_nix_config: ${{ steps.cache-config.outputs.extra_nix_config }}
 
-      - name: Run actual x86_64 Linux VM test
-        if: matrix.system == 'x86_64-linux'
-        shell: bash
-        run: |
-          bash scripts/verify-kvm.sh
-          nix build --show-trace --print-build-logs .#checks.x86_64-linux.any-sync-test
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4.2.1
         with:

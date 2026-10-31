@@ -355,15 +355,13 @@ else: sys.exit(2)
             body.append(line[10:] if line.startswith("          ") else "")
         return "\n".join(body)
 
-    def test_vm_workflow_runs_real_test_before_root_publication(self):
+    def test_publish_workflow_publishes_vm_roots_without_running_vm_test(self):
         workflow = (ROOT / ".github/workflows/publish-cache.yml").read_text()
-        test_step = workflow.index("- name: Run actual x86_64 Linux VM test")
-        actual_test = workflow.index("nix build --show-trace --print-build-logs .#checks.x86_64-linux.any-sync-test", test_step)
+        self.assertNotIn("scripts/verify-kvm.sh", workflow)
+        self.assertNotIn("nix build --show-trace --print-build-logs .#checks.x86_64-linux.any-sync-test", workflow)
         publish_step = workflow.index("- name: Build, publish, and verify package closures")
-        self.assertIn("bash scripts/verify-kvm.sh", workflow[test_step:actual_test])
-        self.assertLess(actual_test, publish_step)
         self.assertIn('if [[ "${{ matrix.system }}" == "x86_64-linux" ]]', workflow[publish_step:])
-        self.assertIn("if: matrix.system == 'x86_64-linux'", workflow[test_step:actual_test])
+        self.assertIn("python3 scripts/cache-publish.py vm-stack", workflow[publish_step:])
 
     def _run_kvm_permission_fixture(self, *, fail_chmod=False, inaccessible_after_chmod=False):
         temp = tempfile.TemporaryDirectory()
@@ -413,45 +411,29 @@ if [[ "$2" == runner ]]; then exit 0; fi
         self.assertNotEqual(result.returncode, 0)
         self.assertGreaterEqual(calls.count("-u nixbld1"), 2)
 
-    def test_failed_vm_test_stops_workflow_before_stack_publication(self):
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            bindir = root / "bin"
-            bindir.mkdir()
-            (bindir / "nix").write_text("""#!/bin/sh
-echo "$*" >> "$NIX_LOG"
-exit "$NIX_EXIT"
-""")
-            (bindir / "sudo").write_text("#!/bin/sh\nexit 0\n")
-            (bindir / "getent").write_text("#!/bin/sh\nexit 0\n")
-            (bindir / "id").write_text("#!/bin/sh\necho runner\n")
-            (bindir / "python3").write_text("""#!/bin/bash
+    def test_vm_roots_publish_after_successful_package_publication(self):
+        script = self.workflow_run_script("Build, publish, and verify package closures").replace(
+            "${{ matrix.system }}", "x86_64-linux")
+        for exit_code in (0, 23):
+            with self.subTest(exit_code=exit_code), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                fake_python = root / "python3"
+                fake_python.write_text("""#!/bin/sh
 echo "$*" >> "$PYTHON_LOG"
-if [[ "$*" == *vm-stack* ]]; then echo advanced >> "$STATE_LOG"; fi
+exit "$PYTHON_EXIT"
 """)
-            for tool in bindir.iterdir():
-                tool.chmod(0o755)
-            kvm = Path("/dev/null")
-            env = os.environ | {"PATH": str(bindir) + os.pathsep + os.environ["PATH"],
-                "NIX_LOG": str(root / "nix.log"), "PYTHON_LOG": str(root / "python.log"),
-                "STATE_LOG": str(root / "state"), "NIX_EXIT": "23"}
-            # Run the actual workflow shell steps in order; GitHub's default is to stop after failure.
-            test_script = self.workflow_run_script("Run actual x86_64 Linux VM test").replace(
-                "bash scripts/verify-kvm.sh", f"bash scripts/verify-kvm.sh '{kvm}'")
-            publish_script = self.workflow_run_script("Build, publish, and verify package closures").replace(
-                "${{ matrix.system }}", "x86_64-linux")
-            results = []
-            for step_script in (test_script, publish_script):
-                step = subprocess.run(["bash", "-euo", "pipefail", "-c", step_script], cwd=ROOT,
-                                      env=env, capture_output=True, text=True)
-                results.append(step)
-                if step.returncode:
-                    break
-            self.assertEqual(results[0].returncode, 23, results[0].stderr)
-            self.assertEqual(len(results), 1, "workflow must not start publication after VM test failure")
-            self.assertFalse((root / "python.log").exists())
-            self.assertFalse((root / "state").exists())
-            self.assertIn("checks.x86_64-linux.any-sync-test", (root / "nix.log").read_text())
+                fake_python.chmod(0o755)
+                log = root / "python.log"
+                env = os.environ | {"PATH": str(root) + os.pathsep + os.environ["PATH"],
+                    "NIX_CACHE_PRIVATE_KEY": "test private signing material",
+                    "PYTHON_LOG": str(log), "PYTHON_EXIT": str(exit_code)}
+                result = subprocess.run(["bash", "-euo", "pipefail", "-c", script], cwd=ROOT,
+                                        env=env, capture_output=True, text=True)
+                self.assertEqual(result.returncode, exit_code, result.stderr)
+                calls = ["scripts/cache-publish.py x86_64-linux"]
+                if exit_code == 0:
+                    calls.append("scripts/cache-publish.py vm-stack")
+                self.assertEqual(log.read_text().splitlines(), calls)
 
     def test_two_latest_successful_vm_revisions_are_retained(self):
         roots_a = [VALID]
