@@ -371,24 +371,26 @@ else: sys.exit(2)
         self.assertEqual(next_state["nar_deadlines"]["nar/obsolete.nar.xz"], "2026-11-10T12:00:00Z")
         self.assertTrue((self.bucket / "nar/obsolete.nar.xz").exists())
 
-    def test_oidc_documentation_covers_both_subjects_and_environment_branch_gate(self):
+    def test_iam_user_documentation_covers_credentials_and_environment_branch_gate(self):
         docs = (ROOT / "docs/binary-cache.md").read_text()
         for required in (
-            "repo:OWNER/REPO:ref:refs/heads/main",
-            "repo:OWNER/REPO:environment:cache-prune",
-            "sts.amazonaws.com",
-            "environment subject does **not** include the branch",
+            "AWS_ACCESS_KEY_ID",
+            "AWS_SECRET_ACCESS_KEY",
+            "NIX_CACHE_PRIVATE_KEY",
             "allowing only `main`",
-            "must not allow a `pull_request` subject",
         ):
             self.assertIn(required, docs)
+        self.assertNotIn("CACHE_WRITER_ROLE_ARN", docs)
 
     def test_prune_workflow_is_trusted_and_dry_run_by_default(self):
         workflow = (ROOT / ".github/workflows/prune-cache.yml").read_text()
         self.assertIn("workflow_dispatch:", workflow)
         self.assertIn("schedule:", workflow)
         self.assertIn("github.ref == 'refs/heads/main'", workflow)
-        self.assertIn("role-to-assume: ${{ vars.CACHE_WRITER_ROLE_ARN }}", workflow)
+        self.assertIn("aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}", workflow)
+        self.assertIn("aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}", workflow)
+        self.assertNotIn("role-to-assume:", workflow)
+        self.assertNotIn("id-token: write", workflow)
         self.assertIn('args+=(--execute)', workflow)
         self.assertIn('[[ "$GITHUB_EVENT_NAME" == "workflow_dispatch"', workflow)
         self.assertIn('"$CACHE_PRUNE_ENABLED" == "true"', workflow)

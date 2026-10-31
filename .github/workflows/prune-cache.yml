@@ -19,9 +19,6 @@ jobs:
     if: github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-24.04
     environment: cache-prune
-    permissions:
-      contents: read
-      id-token: write
     env:
       CACHE_BUCKET: ${{ vars.NIX_CACHE_BUCKET }}
       CACHE_PRUNE_ENABLED: ${{ vars.CACHE_PRUNE_ENABLED }}
@@ -39,7 +36,8 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4.2.1
         with:
-          role-to-assume: ${{ vars.CACHE_WRITER_ROLE_ARN }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ vars.NIX_CACHE_REGION }}
 
       - name: Run cache retention
