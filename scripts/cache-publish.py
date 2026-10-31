@@ -181,7 +181,7 @@ def vm_roots():
 
 
 def publish_vm_stack():
-    """Publish verified reusable roots after workflow has executed the real VM test."""
+    """Publish verified reusable VM roots without running the VM test."""
     if _run_nix("eval", "--impure", "--raw", "--expr", "builtins.currentSystem").stdout.strip() != "x86_64-linux":
         raise PublishError("VM stack publication requires an x86_64-linux runner")
     key_file = os.environ.get("CACHE_SIGNING_KEY_FILE", "")
