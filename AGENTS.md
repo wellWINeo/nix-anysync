@@ -24,7 +24,7 @@ nixos/modules/any-sync/common.nix  # Shared module helpers (user/group, config p
 nixos/tests/any-sync-test.nix      # Integration test (2 VMs, full stack)
 maintainers/maintainer-list.nix    # Maintainer metadata
 docs/update-pkg.md                 # How to update package versions
-Makefile                           # Build + upload to S3 binary cache
+Makefile                           # Local build-all targets
 .github/                           # CI: daily version-check workflows per package
 ```
 
@@ -99,7 +99,7 @@ Integration test in `nixos/tests/any-sync-test.nix`:
 
 - 5 GitHub Actions workflows (one per package) run daily to check for upstream releases
 - New releases trigger issue creation with label `dependency-update`
-- Binary cache uploads go to S3 on Yandex Cloud (see Makefile)
+- Binary cache publishing to AWS is performed by trusted GitHub Actions (see docs/binary-cache.md)
 
 ## External Dependencies (Runtime)
 

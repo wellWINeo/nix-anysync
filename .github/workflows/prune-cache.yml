@@ -1,0 +1,68 @@
+name: Retain binary cache
+
+on:
+  schedule:
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+    inputs:
+      destructive:
+        description: Enable metadata withdrawal and eligible NAR deletion
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  dry-run:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.destructive != true
+    runs-on: ubuntu-24.04
+    env:
+      CACHE_BUCKET: ${{ vars.NIX_CACHE_BUCKET }}
+    steps:
+      - name: Check out trusted default branch
+        uses: actions/checkout@v4.2.2
+        with:
+          ref: main
+
+      - name: Install Python
+        uses: actions/setup-python@v5.6.0
+        with:
+          python-version: '3.x'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4.2.1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.NIX_CACHE_REGION }}
+
+      - name: Run cache retention dry-run
+        run: python3 scripts/cache-retention.py prune
+
+  destructive:
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.destructive == true))
+    runs-on: ubuntu-24.04
+    env:
+      CACHE_BUCKET: ${{ vars.NIX_CACHE_BUCKET }}
+    steps:
+      - name: Check out trusted default branch
+        uses: actions/checkout@v4.2.2
+        with:
+          ref: main
+
+      - name: Install Python
+        uses: actions/setup-python@v5.6.0
+        with:
+          python-version: '3.x'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4.2.1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.NIX_CACHE_REGION }}
+
+      - name: Run destructive cache retention
+        run: python3 scripts/cache-retention.py prune --execute

@@ -1,0 +1,93 @@
+name: Publish native binary cache
+
+# Re-add push: branches: [main] only after disposable-bucket live validation succeeds.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: publish-cache
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish ${{ matrix.system }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      max-parallel: 1
+      fail-fast: false
+      matrix:
+        include:
+          - system: x86_64-linux
+            runner: ubuntu-24.04
+          - system: aarch64-linux
+            runner: ubuntu-24.04-arm
+          - system: x86_64-darwin
+            runner: macos-15-intel
+          - system: aarch64-darwin
+            runner: macos-15
+    env:
+      CACHE_BUCKET: ${{ vars.NIX_CACHE_BUCKET }}
+      CACHE_REGION: ${{ vars.NIX_CACHE_REGION }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4.2.2
+
+      - name: Configure public binary cache
+        id: cache-config
+        shell: bash
+        env:
+          NIX_CACHE_URL: ${{ vars.NIX_CACHE_URL }}
+          NIX_CACHE_PUBLIC_KEY: ${{ vars.NIX_CACHE_PUBLIC_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$NIX_CACHE_URL" || -z "$NIX_CACHE_PUBLIC_KEY" ]]; then
+            echo "::error::NIX_CACHE_URL and NIX_CACHE_PUBLIC_KEY must both be configured"
+            exit 1
+          fi
+          if [[ "$NIX_CACHE_URL" == *$'\n'* || "$NIX_CACHE_PUBLIC_KEY" == *$'\n'* ]]; then
+            echo "::error::Nix cache URL and key must be single-line values"
+            exit 1
+          fi
+          {
+            echo "extra_nix_config<<NIX_CONFIG_EOF"
+            echo "substituters = https://cache.nixos.org $NIX_CACHE_URL"
+            echo "trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= $NIX_CACHE_PUBLIC_KEY"
+            echo "NIX_CONFIG_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: ${{ steps.cache-config.outputs.extra_nix_config }}
+
+      - name: Run actual x86_64 Linux VM test
+        if: matrix.system == 'x86_64-linux'
+        shell: bash
+        run: |
+          bash scripts/verify-kvm.sh
+          nix build --show-trace --print-build-logs .#checks.x86_64-linux.any-sync-test
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4.2.1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.NIX_CACHE_REGION }}
+
+      - name: Build, publish, and verify package closures
+        shell: bash
+        env:
+          NIX_CACHE_PRIVATE_KEY: ${{ secrets.NIX_CACHE_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          key_file="$(mktemp)"
+          trap 'rm -f "$key_file"' EXIT
+          chmod 0600 "$key_file"
+          printf '%s' "$NIX_CACHE_PRIVATE_KEY" > "$key_file"
+          unset NIX_CACHE_PRIVATE_KEY
+          CACHE_SIGNING_KEY_FILE="$key_file" python3 scripts/cache-publish.py '${{ matrix.system }}'
+          if [[ "${{ matrix.system }}" == "x86_64-linux" ]]; then
+            CACHE_SIGNING_KEY_FILE="$key_file" python3 scripts/cache-publish.py vm-stack
+          fi

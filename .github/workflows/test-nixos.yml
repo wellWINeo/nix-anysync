@@ -16,40 +16,39 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4.2.2
 
-      - name: Install Nix
-        uses: cachix/install-nix-action@v31
-
-      - name: Verify KVM availability
+      - name: Configure public binary cache
+        id: cache-config
         shell: bash
+        env:
+          NIX_CACHE_URL: ${{ vars.NIX_CACHE_URL }}
+          NIX_CACHE_PUBLIC_KEY: ${{ vars.NIX_CACHE_PUBLIC_KEY }}
         run: |
           set -euo pipefail
 
-          if [[ ! -c /dev/kvm ]]; then
-            echo "::error::The runner does not provide /dev/kvm"
+          if [[ -n "$NIX_CACHE_URL" && -z "$NIX_CACHE_PUBLIC_KEY" ]] || [[ -z "$NIX_CACHE_URL" && -n "$NIX_CACHE_PUBLIC_KEY" ]]; then
+            echo "::error::Configure both NIX_CACHE_URL and NIX_CACHE_PUBLIC_KEY, or leave both unset"
             exit 1
           fi
-
-          # Nix's daemon may run the build as a nixbld user rather than as the
-          # GitHub Actions runner. Grant the device access only when required.
-          if [[ ! -r /dev/kvm || ! -w /dev/kvm ]]; then
-            sudo chmod o+rw /dev/kvm
+          if [[ "$NIX_CACHE_URL" == *$'\n'* || "$NIX_CACHE_PUBLIC_KEY" == *$'\n'* ]]; then
+            echo "::error::Nix cache URL and public key must each be a single line"
+            exit 1
           fi
-
-          build_users="$(getent passwd | awk -F: '$1 ~ /^nixbld[0-9]+$/ { print $1 }')"
-          build_users="$(printf '%s\n%s\n' "$(id -un)" "$build_users")"
-
-          while IFS= read -r build_user; do
-            [[ -n "$build_user" ]] || continue
-            if ! sudo -u "$build_user" -- bash -c '[[ -r /dev/kvm && -w /dev/kvm ]]'; then
-              sudo chmod a+rw /dev/kvm
-              break
+          {
+            echo "extra_nix_config<<NIX_CONFIG_EOF"
+            if [[ -n "$NIX_CACHE_URL" ]]; then
+              echo "substituters = https://cache.nixos.org $NIX_CACHE_URL"
+              echo "trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= $NIX_CACHE_PUBLIC_KEY"
             fi
-          done <<< "$build_users"
+            echo "NIX_CONFIG_EOF"
+          } >> "$GITHUB_OUTPUT"
 
-          while IFS= read -r build_user; do
-            [[ -n "$build_user" ]] || continue
-            sudo -u "$build_user" -- bash -c '[[ -r /dev/kvm && -w /dev/kvm ]]'
-          done <<< "$build_users"
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: ${{ steps.cache-config.outputs.extra_nix_config }}
+
+      - name: Verify KVM availability
+        run: bash scripts/verify-kvm.sh
 
       - name: Build NixOS VM test
         run: nix build --show-trace --print-build-logs .#checks.x86_64-linux.any-sync-test

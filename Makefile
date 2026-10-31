@@ -1,9 +1,6 @@
-build-and-upload-all:
-	for pkg in consensus coordinator filenode node tools; do \
-		nix build "path:.#any-sync-$$pkg" ; \
-		$(MAKE) upload-result ; \
-	done
+# Build each declared package locally. This target needs no AWS credentials.
+build-all:
+	python3 scripts/build-all.py
 
-upload-result:
-	nix copy $(shell readlink result) \
-		--to 's3://nix-cache?endpoint=https://storage.yandexcloud.net&region=ru-central1&secret-key=$(NIX_CACHE_PRIVATE_KEYFILE)'
+# Publishing is intentionally performed only by the trusted GitHub Actions
+# workflow, which uses IAM-user credentials stored as repository secrets.
