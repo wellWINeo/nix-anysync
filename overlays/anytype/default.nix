@@ -5,6 +5,7 @@
   # https://patch-diff.githubusercontent.com/raw/anyproto/anytype-heart/pull/3220.patch
   anytype-heart = prev.anytype-heart.overrideAttrs (oldAttrs: rec {
     version = "0.50.17";
+    vendorHash = "sha256-n0fcWzUSv4AuAbepWPk5c8DldClQX+Juo3MLca+tLV4=";
     src = final.fetchFromGitHub {
       owner = "anyproto";
       repo = "anytype-heart";
