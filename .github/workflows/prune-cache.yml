@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   dry-run:
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.destructive != true))
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.destructive != true
     runs-on: ubuntu-24.04
     env:
       CACHE_BUCKET: ${{ vars.NIX_CACHE_BUCKET }}
@@ -42,9 +42,8 @@ jobs:
         run: python3 scripts/cache-retention.py prune
 
   destructive:
-    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.destructive == true && vars.CACHE_PRUNE_ENABLED == 'true'
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.destructive == true))
     runs-on: ubuntu-24.04
-    environment: cache-prune
     env:
       CACHE_BUCKET: ${{ vars.NIX_CACHE_BUCKET }}
     steps:

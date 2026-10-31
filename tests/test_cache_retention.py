@@ -390,25 +390,44 @@ else: sys.exit(2)
             self.assertIn(required, docs)
         self.assertNotIn("CACHE_WRITER_ROLE_ARN", docs)
 
-    def test_prune_workflow_is_trusted_and_dry_run_by_default(self):
+    def test_prune_workflow_schedules_automatic_cleanup_on_main(self):
         workflow = (ROOT / ".github/workflows/prune-cache.yml").read_text()
         self.assertIn("workflow_dispatch:", workflow)
         self.assertIn("schedule:", workflow)
-        self.assertIn("github.ref == 'refs/heads/main'", workflow)
         self.assertIn("aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}", workflow)
         self.assertIn("aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}", workflow)
         self.assertNotIn("role-to-assume:", workflow)
         self.assertNotIn("id-token: write", workflow)
-        self.assertIn("dry-run:", workflow)
-        self.assertIn("python3 scripts/cache-retention.py prune\n", workflow)
         dry, destructive = workflow.split("\n  destructive:\n", 1)
-        self.assertNotIn("environment:", dry)
+        self.assertIn("github.ref == 'refs/heads/main'", dry)
+        self.assertIn("github.ref == 'refs/heads/main'", destructive)
+        self.assertNotIn("github.event_name == 'schedule'", dry)
+        self.assertIn("github.event_name == 'schedule'", destructive)
         self.assertIn("inputs.destructive != true", dry)
-        self.assertIn("environment: cache-prune", destructive)
-        for condition in ("github.event_name == 'workflow_dispatch'", "inputs.destructive == true",
-                          "vars.CACHE_PRUNE_ENABLED == 'true'"):
-            self.assertIn(condition, destructive)
-        self.assertIn("python3 scripts/cache-retention.py prune --execute", destructive)
+        self.assertIn("inputs.destructive == true", destructive)
+        self.assertNotIn("CACHE_PRUNE_ENABLED", destructive)
+        self.assertNotIn("environment:", destructive)
+
+    def test_destructive_workflow_step_executes_prune_and_propagates_failure(self):
+        workflow = (ROOT / ".github/workflows/prune-cache.yml").read_text()
+        step = workflow.split("      - name: Run destructive cache retention\n", 1)[1]
+        command = step.splitlines()[0].strip().removeprefix("run: ")
+        bin_dir = Path(self.temp.name) / "bin"
+        bin_dir.mkdir()
+        python = bin_dir / "python3"
+        python.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$ARGS_LOG"\nexit "$FAKE_EXIT"\n')
+        python.chmod(0o755)
+        log = Path(self.temp.name) / "args"
+        for exit_code in (0, 17):
+            with self.subTest(exit_code=exit_code):
+                result = subprocess.run(
+                    ["sh", "-c", command], capture_output=True, text=True,
+                    env=os.environ | {"PATH": str(bin_dir) + os.pathsep + os.environ["PATH"],
+                                      "ARGS_LOG": str(log), "FAKE_EXIT": str(exit_code)},
+                )
+                self.assertEqual(result.returncode, exit_code)
+                self.assertEqual(log.read_text().splitlines(),
+                                 ["scripts/cache-retention.py", "prune", "--execute"])
 
     def test_cli_prints_redacted_aws_stderr(self):
         error = subprocess.CalledProcessError(1, ["aws"], stderr="secret-key=private-value failed\\n")
