@@ -139,7 +139,7 @@ else: sys.exit(2)
             if args[:2] == ("eval", "--raw"):
                 return mock.Mock(stdout=valkey)
             if args[0] == "path-info":
-                return mock.Mock(stdout=json.dumps({driver: {}, valkey: {}}))
+                return mock.Mock(stdout=json.dumps([{"path": driver}, {"path": valkey}]))
             if args[0] == "copy":
                 return mock.Mock(stdout="")
             raise AssertionError(args)
@@ -148,6 +148,36 @@ else: sys.exit(2)
             self.assertEqual(publish.publish_vm_stack(), 0)
         self.assertNotIn(key, self.state["retirements"])
         self.assertEqual(self.state["nar_deadlines"]["nar/old-vm.nar.xz"], "2026-11-10T12:00:00Z")
+
+    def test_public_test_workflow_keeps_vm_build_and_safe_cache_wiring(self):
+        workflow = (ROOT / ".github/workflows/test-nixos.yml").read_text()
+
+        def check(text):
+            self.assertIn("nix build --show-trace --print-build-logs .#checks.x86_64-linux.any-sync-test", text)
+            self.assertIn("NIX_CACHE_URL", text)
+            self.assertIn("NIX_CACHE_PUBLIC_KEY", text)
+            self.assertIn("extra_nix_config", text)
+            self.assertIn("steps.cache-config.outputs.extra_nix_config", text)
+            self.assertNotRegex(text, r"trusted\s*=\s*true")
+            self.assertNotRegex(text, r"require-sigs\s*=\s*false")
+
+        check(workflow)
+        mutated = workflow.replace(
+            "nix build --show-trace --print-build-logs .#checks.x86_64-linux.any-sync-test",
+            "true", 1)
+        with self.assertRaises(AssertionError):
+            check(mutated)
+
+    def test_failure_diagnostics_surface_stderr_and_redact_secret_key(self):
+        error = publish.PublishError("nix command failed")
+        error.stderr = "failed secret-key=/tmp/private%20file details\\n"
+        output = __import__("io").StringIO()
+        with (mock.patch("sys.stderr", output),
+              mock.patch.object(publish, "publish_system", side_effect=error)):
+            self.assertEqual(publish.main(["x86_64-linux"]), 1)
+        self.assertIn("failed", output.getvalue())
+        self.assertIn("secret-key=<redacted>", output.getvalue())
+        self.assertNotIn("/tmp/private", output.getvalue())
 
     def test_dynamic_discovery_one_build_per_package_and_actual_roots(self):
         self.assertEqual(self.run_publish(), 0)
@@ -232,8 +262,9 @@ else: sys.exit(2)
         for path in closure_paths:
             hash_part = path.rsplit("/", 1)[1].split("-", 1)[0]
             metadata_by_path[hash_part] = ("\n".join([
-                f"StorePath: {path}", f"URL: nar/{hash_part}.nar.xz", "NarHash: sha256-abc",
-                "References: none", "Sig: cache-1:signature", "",
+                f"StorePath: {path}", f"URL: nar/{hash_part}.nar.xz", "Compression: xz",
+                "FileHash: sha256-abc=", "FileSize: 10", "NarHash: sha256-def=", "NarSize: 20",
+                "References: ", "Sig: cache-1:signature", "",
             ])).encode()
         info = mock.Mock(stdout=json.dumps(info_value))
         calls = []
@@ -277,7 +308,7 @@ else: sys.exit(2)
             if args[:2] == ("eval", "--raw"):
                 return mock.Mock(stdout=valkey)
             if args[0] == "path-info":
-                return mock.Mock(stdout=json.dumps({driver: {}, valkey: {}}))
+                return mock.Mock(stdout=json.dumps([{"path": driver}, {"path": valkey}]))
             if args[0] == "copy":
                 return mock.Mock(stdout="")
             raise AssertionError(args)
@@ -302,7 +333,7 @@ else: sys.exit(2)
             if args[:2] == ("eval", "--raw"):
                 return mock.Mock(stdout=valkey)
             if args[0] == "path-info":
-                return mock.Mock(stdout=json.dumps({driver: {}, valkey: {}}))
+                return mock.Mock(stdout=json.dumps([{"path": driver}, {"path": valkey}]))
             if args[0] == "copy":
                 raise publish.PublishError("copy failed")
             raise AssertionError(args)
@@ -328,9 +359,10 @@ else: sys.exit(2)
         workflow = (ROOT / ".github/workflows/publish-cache.yml").read_text()
         test_step = workflow.index("- name: Run actual x86_64 Linux VM test")
         actual_test = workflow.index("nix build --show-trace --print-build-logs .#checks.x86_64-linux.any-sync-test", test_step)
-        publish_step = workflow.index("- name: Publish verified VM dependency roots")
+        publish_step = workflow.index("- name: Build, publish, and verify package closures")
         self.assertIn("bash scripts/verify-kvm.sh", workflow[test_step:actual_test])
         self.assertLess(actual_test, publish_step)
+        self.assertIn('if [[ "${{ matrix.system }}" == "x86_64-linux" ]]', workflow[publish_step:])
         self.assertIn("if: matrix.system == 'x86_64-linux'", workflow[test_step:actual_test])
 
     def _run_kvm_permission_fixture(self, *, fail_chmod=False, inaccessible_after_chmod=False):
@@ -406,7 +438,8 @@ if [[ "$*" == *vm-stack* ]]; then echo advanced >> "$STATE_LOG"; fi
             # Run the actual workflow shell steps in order; GitHub's default is to stop after failure.
             test_script = self.workflow_run_script("Run actual x86_64 Linux VM test").replace(
                 "bash scripts/verify-kvm.sh", f"bash scripts/verify-kvm.sh '{kvm}'")
-            publish_script = self.workflow_run_script("Publish verified VM dependency roots")
+            publish_script = self.workflow_run_script("Build, publish, and verify package closures").replace(
+                "${{ matrix.system }}", "x86_64-linux")
             results = []
             for step_script in (test_script, publish_script):
                 step = subprocess.run(["bash", "-euo", "pipefail", "-c", step_script], cwd=ROOT,
@@ -446,6 +479,9 @@ if [[ "$*" == *vm-stack* ]]; then echo advanced >> "$STATE_LOG"; fi
         self.assertIn("chmod 0600", workflow)
         self.assertIn("trap 'rm -f", workflow)
         self.assertNotIn("pull_request", workflow)
+        self.assertIn("workflow_dispatch:", workflow)
+        self.assertNotIn("\non:\n  push:", workflow)
+        self.assertIn("concurrency:\n  group: publish-cache", workflow)
         self.assertIn("permissions:\n  contents: read", workflow)
 
     def test_actual_workflow_shell_step_passes_private_key_file_and_removes_it(self):
@@ -457,7 +493,9 @@ if [[ "$*" == *vm-stack* ]]; then echo advanced >> "$STATE_LOG"; fi
             if line and not line.startswith("          "):
                 break
             body.append(line[10:] if line.startswith("          ") else "")
-        script = "\n".join(body)
+        script = "\n".join(body).replace("${{ matrix.system }}", "x86_64-linux")
+        self.assertEqual(script.count("mktemp"), 1)
+        self.assertIn('if [[ "x86_64-linux" == "x86_64-linux" ]]', script)
         for exit_code in (0, 9):
             with self.subTest(exit_code=exit_code), tempfile.TemporaryDirectory() as temp:
                 root = Path(temp)

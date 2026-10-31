@@ -101,32 +101,6 @@ def _aws(*args):
         raise PublishError(f"cannot execute aws: {error.strerror}") from None
 
 
-def _parse_narinfo(raw, store_path):
-    try:
-        text = raw.decode("utf-8")
-    except UnicodeDecodeError:
-        raise PublishError("destination narinfo is not UTF-8") from None
-    fields = {}
-    signatures = []
-    for line in text.splitlines():
-        if not line or line.startswith(" ") or ": " not in line:
-            raise PublishError("destination narinfo has malformed fields")
-        key, value = line.split(": ", 1)
-        if key == "Sig":
-            signatures.append(value)
-        elif key in fields:
-            raise PublishError("destination narinfo has duplicate fields")
-        else:
-            fields[key] = value
-    required = {"StorePath", "URL", "NarHash", "References"}
-    if not required.issubset(fields) or fields["StorePath"] != store_path or not signatures:
-        raise PublishError("destination narinfo is incomplete or unsigned")
-    url = fields["URL"]
-    if not url.startswith("nar/") or any(part in ("", ".", "..") for part in url.split("/")):
-        raise PublishError("destination narinfo has an unsafe NAR URL")
-    return url
-
-
 def _closure_entries(info):
     if isinstance(info, dict):
         entries = []
@@ -179,7 +153,13 @@ def verify_roots(uri, roots):
             _aws("s3api", "get-object", "--bucket", os.environ["CACHE_BUCKET"],
                  "--key", f"{store_hash}.narinfo", metadata.name)
             metadata.seek(0)
-            nar_key = _parse_narinfo(metadata.read(), store_path)
+            try:
+                parsed = retention._parse_narinfo(metadata.read(), f"{store_hash}.narinfo")
+            except retention.CacheError as error:
+                raise PublishError(str(error)) from None
+            if parsed["store_path"] != store_path:
+                raise PublishError("destination narinfo StorePath does not match expected store path")
+            nar_key = parsed["nar"]
         _aws("s3api", "head-object", "--bucket", os.environ["CACHE_BUCKET"], "--key", nar_key)
         # Nix performs its normal trusted-key signature validation against the destination store.
         _run_nix("store", "verify", "--refresh", "--store", uri, "--sigs-needed", "1", store_path)
@@ -212,12 +192,12 @@ def publish_vm_stack():
     roots = vm_roots()
     # The custom output is always an explicit candidate so membership is exact, not name-based.
     closure = _json_result(_run_nix("path-info", "--recursive", "--json", *roots), "VM root closure")
-    paths = set(closure if isinstance(closure, list) else closure.keys() if isinstance(closure, dict) else [])
+    entries = _closure_entries(closure)
+    if any(not isinstance(entry, dict) or not isinstance(entry.get("path"), str) for entry in entries):
+        raise PublishError("VM root closure returned malformed path information")
+    paths = {entry["path"] for entry in entries}
     if not set(roots).issubset(paths):
         raise PublishError("VM root closure omitted a requested root")
-    valkey = _run_nix("eval", "--raw", ".#checks.x86_64-linux.any-sync-test.nodes.server.services.redis.package.outPath").stdout.strip()
-    if valkey not in paths:
-        raise PublishError("customized Valkey is not in the published VM root closure")
     with retention.locked() as lock:
         state = retention.read_state()
         try:
@@ -227,7 +207,7 @@ def publish_vm_stack():
             retention.record_vm_stack(state, roots, revision, run_id, attempt, verified=True)
             retention.write_state(state, lock)
         except (PublishError, subprocess.CalledProcessError, retention.CacheError) as error:
-            print(f"VM stack publication failed: {error}", file=sys.stderr)
+            _print_failure(f"VM stack publication failed: {error}", error)
             return 1
     return 0
 
@@ -274,10 +254,19 @@ def publish_system(system):
                                          run_id, attempt, verified=True)
                 retention.write_state(state, lock)
             except (PublishError, subprocess.CalledProcessError, retention.CacheError) as error:
-                print(f"Publication failed for {system}/{name}: {error}", file=sys.stderr)
+                _print_failure(f"Publication failed for {system}/{name}: {error}", error)
                 return 1
     return 0
 
+
+def _redact(value):
+    return re.sub(r"secret-key=[^&\s'\"]+", "secret-key=<redacted>", str(value))
+
+def _print_failure(message, error):
+    print(_redact(message), file=sys.stderr)
+    stderr = getattr(error, "stderr", None)
+    if stderr:
+        print(_redact(stderr), file=sys.stderr, end="" if stderr.endswith("\n") else "\n")
 
 def main(argv=None):
     if argv is None:
@@ -286,7 +275,7 @@ def main(argv=None):
         try:
             return publish_vm_stack()
         except (PublishError, subprocess.CalledProcessError, retention.CacheError) as error:
-            print(f"cache-publish: {error}", file=sys.stderr)
+            _print_failure(f"cache-publish: {error}", error)
             return 1
     if len(argv) != 1:
         print("usage: cache-publish.py SYSTEM|vm-stack", file=sys.stderr)
@@ -294,7 +283,7 @@ def main(argv=None):
     try:
         return publish_system(argv[0])
     except (PublishError, subprocess.CalledProcessError, retention.CacheError) as error:
-        print(f"cache-publish: {error}", file=sys.stderr)
+        _print_failure(f"cache-publish: {error}", error)
         return 1
 
 

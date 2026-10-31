@@ -183,18 +183,21 @@ def locked():
         yield lock
     finally:
         # Conditional release cannot remove a replacement owner's lock.
-        release_lock(lock)
+        try:
+            release_lock(lock)
+        except (CacheError, subprocess.CalledProcessError) as error:
+            print(_redact(f"cache-retention: warning: could not release lock: {error}"), file=sys.stderr)
 
 
 def _assert_lock_held(lock):
     if not isinstance(lock, Lock) or not lock.token or not lock.etag:
         raise CacheError("operation requires the acquired lock")
     with tempfile.NamedTemporaryFile() as current_lock:
-        aws("s3api", "get-object", "--bucket", bucket(), "--key", LOCK_KEY, current_lock.name)
+        response = aws("s3api", "get-object", "--bucket", bucket(), "--key", LOCK_KEY, current_lock.name)
         current_lock.seek(0)
         record = decode_json(current_lock.read(), "lock")
-    head = decode_json(aws("s3api", "head-object", "--bucket", bucket(), "--key", LOCK_KEY).stdout, "lock headers")
-    if record.get("token") != lock.token or head.get("ETag") != lock.etag:
+    headers = decode_json(response.stdout, "lock response")
+    if record.get("token") != lock.token or headers.get("ETag") != lock.etag:
         raise CacheError("lock is no longer held by this owner")
 
 
@@ -205,29 +208,12 @@ def write_state(state, lock):
         "--body", "-", input=json.dumps(state, sort_keys=True, separators=(",", ":")))
 
 
-def _metadata_keys():
-    # Paginate and only use this for the explicit one-time empty-bucket check.
-    token = None
-    keys = []
-    while True:
-        args = ["s3api", "list-objects-v2", "--bucket", bucket()]
-        if token:
-            args += ["--continuation-token", token]
-        response = decode_json(aws(*args).stdout, "S3 listing")
-        keys.extend(obj["Key"] for obj in response.get("Contents", []))
-        if not response.get("IsTruncated"):
-            return keys
-        token = response.get("NextContinuationToken")
-        if not token:
-            raise CacheError("truncated S3 listing has no continuation token")
-
-
 def initialize_empty(enabled):
     if not enabled:
         raise CacheError("initialization requires --initialize-empty")
     with locked() as lock:
         _assert_lock_held(lock)
-        keys = _metadata_keys()
+        keys = list(_list_objects())
         if any(key != LOCK_KEY for key in keys):
             raise CacheError("refusing initialization: bucket is not empty")
         write_state(empty_state(), lock)
@@ -274,8 +260,7 @@ def record_vm_stack(state, roots, revision, run_id, run_attempt, verified):
         if old["revision"] == revision and old["roots"] == roots:
             stacks[index] = candidate
             return state
-    state["vm_stacks"] = [candidate] + stacks
-    state["vm_stacks"] = state["vm_stacks"][:2]
+    state["vm_stacks"] = ([candidate] + stacks)[:2]
     return state
 
 
@@ -308,7 +293,7 @@ def _parse_narinfo(raw, key):
             raise CacheError(f"{key} contains duplicate {name}")
         else:
             fields[name] = value
-    required = {"StorePath", "URL", "Compression", "FileHash", "FileSize", "NarHash", "NarSize", "References"}
+    required = {"StorePath", "URL", "Compression", "FileHash", "FileSize", "NarHash", "NarSize"}
     if not required.issubset(fields) or not signatures:
         raise CacheError(f"{key} is incomplete or unsigned")
     match = STORE_HASH.fullmatch(key)
@@ -330,7 +315,8 @@ def _parse_narinfo(raw, key):
         if not fields[field].isdigit():
             raise CacheError(f"{key} has malformed {field}")
     references = []
-    for ref in fields["References"].split():
+    # Nix omits the References line entirely for zero-reference paths.
+    for ref in fields.get("References", "").split():
         item = STORE_NAME.fullmatch(ref)
         if not item:
             raise CacheError(f"{key} has malformed reference")
@@ -418,6 +404,17 @@ def _marked_metadata(state, records):
     return marked
 
 
+def _deletion_candidates(state, advertised, objects, now):
+    candidates = []
+    for nar, deadline in state["nar_deadlines"].items():
+        unresolved = any(item["nar"] == nar and item["withdrawn_at"] is None
+                         for item in state["retirements"].values())
+        if (datetime.fromisoformat(deadline.replace("Z", "+00:00")) <= now
+                and not unresolved and not advertised.get(nar) and nar in objects):
+            candidates.append(nar)
+    return sorted(candidates)
+
+
 def prune(dry_run=True, clock=None):
     """Plan or execute one lock-protected mark/retire/sweep pass."""
     clock = clock or _now_utc
@@ -429,12 +426,7 @@ def prune(dry_run=True, clock=None):
         if dry_run:
             report["withdraw"] = sorted(set(records) - marked)
             now = clock()
-            for nar, deadline in sorted(state["nar_deadlines"].items()):
-                unresolved = any(item["nar"] == nar and item["withdrawn_at"] is None
-                                 for item in state["retirements"].values())
-                eligible = datetime.fromisoformat(deadline.replace("Z", "+00:00")) <= now
-                if eligible and not unresolved and not advertised.get(nar) and nar in objects:
-                    report["delete"].append(nar)
+            report["delete"] = _deletion_candidates(state, advertised, objects, now)
         else:
             for key in sorted(set(records) - marked):
                 record = records[key]
@@ -471,14 +463,7 @@ def prune(dry_run=True, clock=None):
             objects, records, advertised = _metadata_graph(state)
             _marked_metadata(state, records)
             now = clock()
-            candidates = set(state["nar_deadlines"])
-            candidates.update(item["nar"] for item in state["retirements"].values())
-            for nar in sorted(candidates):
-                if advertised.get(nar) or any(item["nar"] == nar and item["withdrawn_at"] is None for item in state["retirements"].values()):
-                    continue
-                deadline = state["nar_deadlines"].get(nar)
-                if deadline is None or now < datetime.fromisoformat(deadline.replace("Z", "+00:00")) or nar not in objects:
-                    continue
+            for nar in _deletion_candidates(state, advertised, objects, now):
                 aws("s3api", "delete-object", "--bucket", bucket(), "--key", nar)
                 state["nar_deadlines"].pop(nar, None)
                 for key in [k for k, item in state["retirements"].items() if item["nar"] == nar]:
@@ -488,10 +473,12 @@ def prune(dry_run=True, clock=None):
         return report
 
 
+def _redact(value):
+    return re.sub(r"secret-key=[^&\s'\"]+", "secret-key=<redacted>", str(value))
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("lock")
     sub.add_parser("unlock").add_argument("--etag", required=True)
     prune_cmd = sub.add_parser("prune", help="dry-run unless --execute is explicitly supplied")
     prune_cmd.add_argument("--execute", action="store_true")
@@ -499,10 +486,7 @@ def main(argv=None):
     init.add_argument("--initialize-empty", action="store_true")
     args = parser.parse_args(argv)
     try:
-        if args.command == "lock":
-            lock = acquire_lock()
-            print(json.dumps({"token": lock.token, "etag": lock.etag}))
-        elif args.command == "unlock":
+        if args.command == "unlock":
             release_lock(Lock("", args.etag))
         elif args.command == "prune":
             print(json.dumps(prune(dry_run=not args.execute), sort_keys=True))
@@ -510,6 +494,8 @@ def main(argv=None):
             initialize_empty(args.initialize_empty)
     except (CacheError, subprocess.CalledProcessError) as error:
         print(f"cache-retention: {error}", file=sys.stderr)
+        if isinstance(error, subprocess.CalledProcessError) and error.stderr:
+            print(_redact(error.stderr), file=sys.stderr, end="" if error.stderr.endswith("\n") else "\n")
         return 1
     return 0
 

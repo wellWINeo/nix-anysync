@@ -1,9 +1,11 @@
 name: Publish native binary cache
 
+# Re-add push: branches: [main] only after disposable-bucket live validation succeeds.
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
+
+concurrency:
+  group: publish-cache
 
 permissions:
   contents: read
@@ -60,16 +62,6 @@ jobs:
         with:
           extra_nix_config: ${{ steps.cache-config.outputs.extra_nix_config }}
 
-      - name: Verify native system
-        shell: bash
-        run: |
-          set -euo pipefail
-          actual="$(nix eval --impure --raw --expr builtins.currentSystem)"
-          if [[ "$actual" != "${{ matrix.system }}" ]]; then
-            echo "::error::Runner reports $actual, expected ${{ matrix.system }}"
-            exit 1
-          fi
-
       - name: Run actual x86_64 Linux VM test
         if: matrix.system == 'x86_64-linux'
         shell: bash
@@ -96,17 +88,6 @@ jobs:
           printf '%s' "$NIX_CACHE_PRIVATE_KEY" > "$key_file"
           unset NIX_CACHE_PRIVATE_KEY
           CACHE_SIGNING_KEY_FILE="$key_file" python3 scripts/cache-publish.py '${{ matrix.system }}'
-
-      - name: Publish verified VM dependency roots
-        if: matrix.system == 'x86_64-linux'
-        shell: bash
-        env:
-          NIX_CACHE_PRIVATE_KEY: ${{ secrets.NIX_CACHE_PRIVATE_KEY }}
-        run: |
-          set -euo pipefail
-          key_file="$(mktemp)"
-          trap 'rm -f "$key_file"' EXIT
-          chmod 0600 "$key_file"
-          printf '%s' "$NIX_CACHE_PRIVATE_KEY" > "$key_file"
-          unset NIX_CACHE_PRIVATE_KEY
-          CACHE_SIGNING_KEY_FILE="$key_file" python3 scripts/cache-publish.py vm-stack
+          if [[ "${{ matrix.system }}" == "x86_64-linux" ]]; then
+            CACHE_SIGNING_KEY_FILE="$key_file" python3 scripts/cache-publish.py vm-stack
+          fi

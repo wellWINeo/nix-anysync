@@ -41,9 +41,7 @@ elif a[:2] == ["s3api", "delete-object"]:
     path(key).unlink()
 elif a[:2] == ["s3api", "get-object"]:
     key = a[a.index("--key") + 1]; pathlib.Path(a[-1]).write_bytes(path(key).read_bytes())
-    print(json.dumps({"Key": key}))
-elif a[:2] == ["s3api", "head-object"]:
-    print(json.dumps({"ETag": '\\"' + "a" * 32 + '\\"'}))
+    print(json.dumps({"Key": key, "ETag": '\\"' + "a" * 32 + '\\"'}))
 elif a[:2] == ["s3api", "list-objects-v2"]:
     contents = sorted([{"Key": str(p.relative_to(root))} for p in root.rglob("*") if p.is_file()], key=lambda x: x["Key"])
     start = int(a[a.index("--continuation-token") + 1]) if "--continuation-token" in a else 0
@@ -371,6 +369,16 @@ else: sys.exit(2)
         self.assertEqual(next_state["nar_deadlines"]["nar/obsolete.nar.xz"], "2026-11-10T12:00:00Z")
         self.assertTrue((self.bucket / "nar/obsolete.nar.xz").exists())
 
+    def test_narinfo_without_references_line_parses_as_no_references(self):
+        # Nix omits the References line entirely for zero-reference paths.
+        key = "0123456789abcdfghijklmnpqrsvwxyz.narinfo"
+        text = (f"StorePath: {VALID}\nURL: nar/0123456789abcdfghijklmnpqrsvwxyz.nar.xz\nCompression: xz\n"
+                "FileHash: sha256-abc=\nFileSize: 10\nNarHash: sha256-def=\nNarSize: 20\n"
+                "Sig: cache-1:signature\n").encode()
+        record = cache._parse_narinfo(text, key)
+        self.assertEqual(record["references"], [])
+        self.assertEqual(record["store_path"], VALID)
+
     def test_iam_user_documentation_covers_credentials_and_environment_branch_gate(self):
         docs = (ROOT / "docs/binary-cache.md").read_text()
         for required in (
@@ -391,10 +399,25 @@ else: sys.exit(2)
         self.assertIn("aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}", workflow)
         self.assertNotIn("role-to-assume:", workflow)
         self.assertNotIn("id-token: write", workflow)
-        self.assertIn('args+=(--execute)', workflow)
-        self.assertIn('[[ "$GITHUB_EVENT_NAME" == "workflow_dispatch"', workflow)
-        self.assertIn('"$CACHE_PRUNE_ENABLED" == "true"', workflow)
-        self.assertIn('python3 scripts/cache-retention.py prune "${args[@]}"', workflow)
+        self.assertIn("dry-run:", workflow)
+        self.assertIn("python3 scripts/cache-retention.py prune\n", workflow)
+        dry, destructive = workflow.split("\n  destructive:\n", 1)
+        self.assertNotIn("environment:", dry)
+        self.assertIn("inputs.destructive != true", dry)
+        self.assertIn("environment: cache-prune", destructive)
+        for condition in ("github.event_name == 'workflow_dispatch'", "inputs.destructive == true",
+                          "vars.CACHE_PRUNE_ENABLED == 'true'"):
+            self.assertIn(condition, destructive)
+        self.assertIn("python3 scripts/cache-retention.py prune --execute", destructive)
+
+    def test_cli_prints_redacted_aws_stderr(self):
+        error = subprocess.CalledProcessError(1, ["aws"], stderr="secret-key=private-value failed\\n")
+        output = __import__("io").StringIO()
+        with (mock.patch("sys.stderr", output),
+              mock.patch.object(cache, "prune", side_effect=error)):
+            self.assertEqual(cache.main(["prune"]), 1)
+        self.assertIn("secret-key=<redacted>", output.getvalue())
+        self.assertNotIn("private-value", output.getvalue())
 
     def test_state_rejects_malformed_publication_shapes_and_retirement_records(self):
         state = cache.empty_state()

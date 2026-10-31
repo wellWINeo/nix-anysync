@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """Build every package exposed by the current native flake system."""
 
-import json
-import subprocess
+import importlib.util
+from pathlib import Path
 import sys
+
+_SPEC = importlib.util.spec_from_file_location("cache_publish", Path(__file__).with_name("cache-publish.py"))
+publish = importlib.util.module_from_spec(_SPEC)
+_SPEC.loader.exec_module(publish)
 
 
 class BuildError(RuntimeError):
@@ -12,13 +16,12 @@ class BuildError(RuntimeError):
 
 def run(command, *, capture_output=True):
     try:
-        return subprocess.run(command, check=True, capture_output=capture_output, text=True)
-    except subprocess.CalledProcessError as error:
-        diagnostic = f"{command[0]} command failed (exit {error.returncode}): {' '.join(command[1:])}"
+        return publish._run(command, capture=capture_output)
+    except publish.PublishError as error:
+        diagnostic = str(error)
         if error.stderr:
             diagnostic += f"\n{error.stderr.rstrip()}"
         raise BuildError(diagnostic) from None
-
 
 def current_system():
     system = run(["nix", "eval", "--impure", "--raw", "--expr", "builtins.currentSystem"]).stdout.strip()
@@ -26,19 +29,17 @@ def current_system():
         raise BuildError("Nix returned an empty current system")
     return system
 
-
 def package_names(system):
-    raw = run(["nix", "eval", "--json", f".#packages.{system}", "--apply", "builtins.attrNames"]).stdout
     try:
-        names = json.loads(raw)
-    except json.JSONDecodeError as error:
-        raise BuildError("Nix returned invalid package-name JSON") from error
-    if (not isinstance(names, list) or not names
-            or any(not isinstance(name, str) or not name for name in names)
-            or len(names) != len(set(names))):
+        names = publish.discover_packages(system)
+    except publish.PublishError as error:
+        diagnostic = str(error)
+        if error.stderr:
+            diagnostic += f"\n{error.stderr.rstrip()}"
+        raise BuildError(diagnostic) from None
+    if not names:
         raise BuildError("Nix returned an empty or invalid package-name list")
     return names
-
 
 def build_all():
     system = current_system()
