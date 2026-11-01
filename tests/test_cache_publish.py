@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -66,6 +67,7 @@ else: sys.exit(2)
             "CACHE_BUCKET": "test-bucket", "CACHE_REGION": "us-test-1",
             "CACHE_SIGNING_KEY_FILE": str(self.root / "secret key"),
             "GITHUB_SHA": "revision", "GITHUB_RUN_ID": "123", "GITHUB_RUN_ATTEMPT": "1",
+            "GITHUB_EVENT_NAME": "workflow_dispatch",
         }
         (self.root / "secret key").write_text("never logged")
         self.patch_env = mock.patch.dict(os.environ, self.env)
@@ -408,6 +410,15 @@ else: sys.exit(2)
         copy = next(call for call in calls if call[0] == "copy")
         self.assertNotIn(".#checks.x86_64-linux.any-sync-test", copy)
         self.assertNotIn("any-sync-test", roots)
+
+    def test_vm_publication_fixture_isolated_from_parent_push_event(self):
+        env = os.environ | {"GITHUB_EVENT_NAME": "push"}
+        result = subprocess.run(
+            [sys.executable, "-m", "unittest", "-q",
+             "test_cache_publish.CachePublishTest.test_vm_stack_publishes_explicit_driver_and_custom_valkey_not_test_result"],
+            cwd=ROOT / "tests", env=env, capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_push_skips_vm_build_when_current_roots_match(self):
         driver = VALID.replace("demo-1", "nixos-test-driver")
