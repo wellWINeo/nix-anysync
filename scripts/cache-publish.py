@@ -8,6 +8,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 from urllib.parse import quote
 
 import importlib.util
@@ -77,6 +78,17 @@ def package_version(system, name):
     if not isinstance(version, str) or not version.strip():
         raise PublishError(f"package {name} has ambiguous version metadata")
     return version
+
+
+def expected_roots(attribute):
+    result = _run_nix("eval", "--json", attribute, "--apply",
+                      "p: map (output: p.${output}.outPath) (p.meta.outputsToInstall or p.outputs)")
+    roots = _json_result(result, f"outputs for {attribute}")
+    if (not isinstance(roots, list) or not roots
+            or any(not isinstance(root, str) or not retention.STORE_PATH.fullmatch(root) for root in roots)
+            or len(roots) != len(set(roots))):
+        raise PublishError(f"{attribute} returned invalid output paths")
+    return roots
 
 
 def build_package(system, name):
@@ -189,7 +201,24 @@ def publish_vm_stack():
     if not Path(key_file).is_file():
         raise PublishError("signing key file is unavailable")
     revision, run_id, attempt = _publication_revision()
+    expected = None
+    if os.environ.get("GITHUB_EVENT_NAME") == "push":
+        state = retention.read_state()
+        driver = expected_roots(".#checks.x86_64-linux.any-sync-test.driver")
+        valkey = _run_nix("eval", "--raw",
+                          ".#checks.x86_64-linux.any-sync-test.nodes.server.services.redis.package.outPath").stdout.strip()
+        if len(driver) != 1 or not retention.STORE_PATH.fullmatch(valkey):
+            raise PublishError("VM inputs returned invalid output paths")
+        expected = list(dict.fromkeys([driver[0], valkey]))
+        if state["vm_stacks"] and set(state["vm_stacks"][0]["roots"]) == set(expected):
+            print("VM inputs unchanged; skipping build and publication.", flush=True)
+            return 0
+    print("Building VM inputs", flush=True)
+    started = time.monotonic()
     roots = vm_roots()
+    if expected is not None and set(roots) != set(expected):
+        raise PublishError("VM inputs changed between evaluation and build")
+    print(f"Built VM inputs in {time.monotonic() - started:.1f}s", flush=True)
     # The custom output is always an explicit candidate so membership is exact, not name-based.
     closure = _json_result(_run_nix("path-info", "--recursive", "--json", *roots), "VM root closure")
     entries = _closure_entries(closure)
@@ -201,8 +230,13 @@ def publish_vm_stack():
     with retention.locked() as lock:
         state = retention.read_state()
         try:
+            print("Publishing VM inputs", flush=True)
+            started = time.monotonic()
             _run_nix("copy", "--to", uri, *roots)
+            print(f"Copied VM inputs in {time.monotonic() - started:.1f}s; verifying", flush=True)
+            started = time.monotonic()
             verified_paths = verify_roots(uri, roots)
+            print(f"Verified VM inputs in {time.monotonic() - started:.1f}s", flush=True)
             retention.supersede_retirements(state, verified_paths)
             retention.record_vm_stack(state, roots, revision, run_id, attempt, verified=True)
             retention.write_state(state, lock)
@@ -235,18 +269,44 @@ def publish_system(system):
         raise PublishError("signing key file is unavailable")
     revision, run_id, attempt = _publication_revision()
 
-    # Build before acquiring the shared lock; no remote writes happen until all builds finish.
-    prepared = []
+    # A push compares against verified current roots; manual dispatch republishes for repair.
+    state = retention.read_state() if os.environ.get("GITHUB_EVENT_NAME") == "push" else None
+    pending = []
     for name in discover_packages(system):
         version = package_version(system, name)
-        prepared.append((name, version, build_package(system, name)))
+        expected = expected_roots(f".#packages.{system}.{name}") if state is not None else None
+        versions = state["packages"].get(system, {}).get(name, []) if state is not None else []
+        if (versions and versions[0]["version"] == version
+                and set(versions[0]["roots"]) == set(expected)):
+            print(f"Skipping {name} {version}: current roots already published", flush=True)
+        else:
+            pending.append((name, version, expected))
 
+    # Build before acquiring the shared lock; no remote writes happen until all builds finish.
+    prepared = []
+    for index, (name, version, expected) in enumerate(pending, 1):
+        print(f"Building {name} {version} ({index}/{len(pending)})", flush=True)
+        started = time.monotonic()
+        roots = build_package(system, name)
+        if expected is not None and set(roots) != set(expected):
+            raise PublishError(f"package {name} outputs changed between evaluation and build")
+        print(f"{index}/{len(pending)} built: {name} ({time.monotonic() - started:.1f}s)", flush=True)
+        prepared.append((name, version, roots))
+
+    if not prepared:
+        print(f"No package outputs need publication for {system}.", flush=True)
+        return 0
     with retention.locked() as lock:
         state = retention.read_state()
         for name, version, roots in prepared:
             try:
+                print(f"Publishing {name} {version}", flush=True)
+                started = time.monotonic()
                 _run_nix("copy", "--to", uri, *roots)
+                print(f"Copied {name} in {time.monotonic() - started:.1f}s; verifying", flush=True)
+                started = time.monotonic()
                 verified_paths = verify_roots(uri, roots)
+                print(f"Verified {name} in {time.monotonic() - started:.1f}s", flush=True)
                 retention.supersede_retirements(state, verified_paths)
                 # The state primitive replaces this version's roots/id in place. Distinct
                 # versions remain distinct retention entries even if Nix deduplicates their paths.

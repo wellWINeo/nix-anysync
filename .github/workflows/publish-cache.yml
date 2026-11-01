@@ -1,7 +1,8 @@
 name: Publish native binary cache
 
-# Re-add push: branches: [main] only after disposable-bucket live validation succeeds.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -12,6 +13,7 @@ permissions:
 
 jobs:
   publish:
+    if: github.ref == 'refs/heads/main'
     name: Publish ${{ matrix.system }}
     runs-on: ${{ matrix.runner }}
     strategy:

@@ -39,6 +39,9 @@ if a[:2] == ["eval", "--impure"]:
     print(os.environ["NIX_SYSTEM"])
 elif a[:2] == ["eval", "--json"] and a[2].startswith(".#packages.") and a[-2:] == ["--apply", "builtins.attrNames"]:
     print(json.dumps(list(data["packages"])))
+elif a[:2] == ["eval", "--json"] and "--apply" in a:
+    name = a[2].rsplit(".", 1)[-1]
+    print(json.dumps(data["outputs"][name]))
 elif a[:2] == ["eval", "--json"]:
     name = a[2].rsplit(".", 1)[0].rsplit(".", 1)[-1]
     if name not in data["packages"] or "version" not in data["packages"][name]:
@@ -188,6 +191,90 @@ else: sys.exit(2)
         self.assertEqual(packages["demo"][0]["roots"], json.loads(self.fixture.read_text())["outputs"]["demo"])
         self.assertEqual(set(packages), {"demo", "other"})
 
+    def test_push_skips_only_current_version_and_roots(self):
+        data = json.loads(self.fixture.read_text())
+        self.state["packages"] = {"x86_64-linux": {"demo": [{
+            "version": "1.2.3", "roots": data["outputs"]["demo"],
+            "revision": "old", "run_id": "1", "run_attempt": 1,
+        }]}}
+        with mock.patch.dict(os.environ, {"GITHUB_EVENT_NAME": "push"}):
+            self.assertEqual(self.run_publish(), 0)
+        builds = [c[-1] for c in self.nix_calls if c[1] == "build"]
+        self.assertEqual(builds, [".#packages.x86_64-linux.other"])
+        self.assertEqual(set(self.state["packages"]["x86_64-linux"]), {"demo", "other"})
+        self.assertEqual(self.state["packages"]["x86_64-linux"]["demo"][0]["revision"], "old")
+
+    def test_push_with_no_changes_skips_builds_and_lock(self):
+        data = json.loads(self.fixture.read_text())
+        self.state["packages"] = {"x86_64-linux": {
+            name: [{"version": info["version"], "roots": data["outputs"][name],
+                    "revision": "old", "run_id": "1", "run_attempt": 1}]
+            for name, info in data["packages"].items()
+        }}
+        with mock.patch.dict(os.environ, {"GITHUB_EVENT_NAME": "push"}):
+            self.assertEqual(self.run_publish(), 0)
+        self.assertFalse(any(c[1] == "build" for c in self.nix_calls))
+        publish.retention.locked.assert_not_called()
+        self.assertEqual(self.writes, [])
+
+    def test_manual_dispatch_republishes_already_recorded_outputs(self):
+        data = json.loads(self.fixture.read_text())
+        self.state["packages"] = {"x86_64-linux": {
+            name: [{"version": info["version"], "roots": data["outputs"][name],
+                    "revision": "old", "run_id": "1", "run_attempt": 1}]
+            for name, info in data["packages"].items()
+        }}
+        with mock.patch.dict(os.environ, {"GITHUB_EVENT_NAME": "workflow_dispatch"}):
+            self.assertEqual(self.run_publish(), 0)
+        self.assertEqual(len([c for c in self.nix_calls if c[1] == "build"]), 2)
+        self.assertTrue(self.writes)
+
+    def test_push_republishes_same_version_when_output_changes(self):
+        self.state["packages"] = {"x86_64-linux": {"demo": [{
+            "version": "1.2.3", "roots": [VALID.replace("demo-1", "old-demo")],
+            "revision": "old", "run_id": "1", "run_attempt": 1,
+        }]}}
+        with mock.patch.dict(os.environ, {"GITHUB_EVENT_NAME": "push"}):
+            self.assertEqual(self.run_publish(), 0)
+        builds = [c[-1] for c in self.nix_calls if c[1] == "build"]
+        self.assertIn(".#packages.x86_64-linux.demo", builds)
+        self.assertEqual(self.state["packages"]["x86_64-linux"]["demo"][0]["roots"],
+                         json.loads(self.fixture.read_text())["outputs"]["demo"])
+
+    def test_push_republishes_new_version_even_if_roots_are_unchanged(self):
+        data = json.loads(self.fixture.read_text())
+        self.state["packages"] = {"x86_64-linux": {"demo": [{
+            "version": "old", "roots": data["outputs"]["demo"],
+            "revision": "old", "run_id": "1", "run_attempt": 1,
+        }]}}
+        with mock.patch.dict(os.environ, {"GITHUB_EVENT_NAME": "push"}):
+            self.assertEqual(self.run_publish(), 0)
+        self.assertEqual([v["version"] for v in self.state["packages"]["x86_64-linux"]["demo"]],
+                         ["1.2.3", "old"])
+
+    def test_changed_outputs_between_evaluation_and_build_are_rejected(self):
+        with (mock.patch.dict(os.environ, {"GITHUB_EVENT_NAME": "push"}),
+              mock.patch.object(publish, "expected_roots", return_value=[VALID.replace("demo-1", "wrong")])):
+            self.assertNotEqual(self.run_publish(), 0)
+        publish.retention.locked.assert_not_called()
+        self.assertEqual(self.writes, [])
+
+    def test_push_fails_closed_when_manifest_cannot_be_read(self):
+        with (mock.patch.dict(os.environ, {"GITHUB_EVENT_NAME": "push"}),
+              mock.patch.object(publish.retention, "read_state", side_effect=publish.retention.CacheError("bad state"))):
+            self.assertNotEqual(self.run_publish(), 0)
+        self.assertFalse(any(c[1] == "build" for c in self.nix_calls))
+        self.assertEqual(self.writes, [])
+
+    def test_build_progress_names_each_package_and_reports_completed_count(self):
+        output = __import__("io").StringIO()
+        with mock.patch("sys.stdout", output):
+            self.assertEqual(self.run_publish(), 0)
+        self.assertIn("Building demo", output.getvalue())
+        self.assertIn("1/2 built", output.getvalue())
+        self.assertIn("Building other", output.getvalue())
+        self.assertIn("2/2 built", output.getvalue())
+
     def test_build_failure_is_nonzero_and_does_not_advance_that_package(self):
         data = json.loads(self.fixture.read_text()); data["fail_build"] = ["demo"]
         self.fixture.write_text(json.dumps(data))
@@ -321,6 +408,51 @@ else: sys.exit(2)
         copy = next(call for call in calls if call[0] == "copy")
         self.assertNotIn(".#checks.x86_64-linux.any-sync-test", copy)
         self.assertNotIn("any-sync-test", roots)
+
+    def test_push_skips_vm_build_when_current_roots_match(self):
+        driver = VALID.replace("demo-1", "nixos-test-driver")
+        valkey = VALID.replace("demo-1", "valkey-custom")
+        self.state["vm_stacks"] = [{"roots": [driver, valkey], "revision": "old",
+                                    "run_id": "1", "run_attempt": 1}]
+        def fake_nix(*args):
+            if args[:2] == ("eval", "--impure"):
+                return mock.Mock(stdout="x86_64-linux")
+            if args[:2] == ("eval", "--json"):
+                return mock.Mock(stdout=json.dumps([driver]))
+            if args[:2] == ("eval", "--raw"):
+                return mock.Mock(stdout=valkey)
+            raise AssertionError(args)
+        with (mock.patch.dict(os.environ, {"GITHUB_EVENT_NAME": "push"}),
+              mock.patch.object(publish, "_run_nix", side_effect=fake_nix)):
+            self.assertEqual(publish.publish_vm_stack(), 0)
+        publish.retention.locked.assert_not_called()
+        self.assertEqual(self.writes, [])
+
+    def test_push_builds_and_publishes_changed_vm_inputs(self):
+        driver = VALID.replace("demo-1", "nixos-test-driver")
+        valkey = VALID.replace("demo-1", "valkey-custom")
+        self.state["vm_stacks"] = [{"roots": [VALID], "revision": "old",
+                                    "run_id": "1", "run_attempt": 1}]
+        def fake_nix(*args):
+            if args[:2] == ("eval", "--impure"):
+                return mock.Mock(stdout="x86_64-linux")
+            if args[:2] == ("eval", "--json"):
+                return mock.Mock(stdout=json.dumps([driver]))
+            if args[:2] == ("eval", "--raw"):
+                return mock.Mock(stdout=valkey)
+            if args[0] == "build":
+                return mock.Mock(stdout=driver + "\n")
+            if args[0] == "path-info":
+                return mock.Mock(stdout=json.dumps([{"path": driver}, {"path": valkey}]))
+            if args[0] == "copy":
+                return mock.Mock(stdout="")
+            raise AssertionError(args)
+        with (mock.patch.dict(os.environ, {"GITHUB_EVENT_NAME": "push"}),
+              mock.patch.object(publish, "_run_nix", side_effect=fake_nix),
+              mock.patch.object(publish, "verify_roots", return_value={driver, valkey})):
+            self.assertEqual(publish.publish_vm_stack(), 0)
+        self.assertEqual(self.state["vm_stacks"][0]["roots"], [driver, valkey])
+        self.assertTrue(self.writes)
 
     def test_vm_upload_failure_does_not_advance_stack_state(self):
         driver = VALID.replace("demo-1", "nixos-test-driver")
@@ -462,7 +594,8 @@ exit "$PYTHON_EXIT"
         self.assertIn("trap 'rm -f", workflow)
         self.assertNotIn("pull_request", workflow)
         self.assertIn("workflow_dispatch:", workflow)
-        self.assertNotIn("\non:\n  push:", workflow)
+        self.assertIn("\non:\n  push:\n    branches: [main]", workflow)
+        self.assertIn("if: github.ref == 'refs/heads/main'", workflow)
         self.assertIn("concurrency:\n  group: publish-cache", workflow)
         self.assertIn("permissions:\n  contents: read", workflow)
 
